@@ -1,37 +1,85 @@
-import type * as THREE from 'three'
 import type { MaybeRef } from 'vue'
+import * as THREE from 'three'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
 import { ref, toRaw, unref, watch } from 'vue'
+import { POINT_SIZE } from '../common/constants'
 
 type PCDPoints = THREE.Points<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.PointsMaterial, THREE.Object3DEventMap>
 
-interface UsePCDOptions {
-  file?: MaybeRef<string>
-  onLoad: (points: PCDPoints, oldPoints?: PCDPoints) => void
+export enum PCDType {
+  Full,
+  Part,
 }
 
-export interface InjectUsePCD {
-  loadPCDFile: (data: ArrayBuffer | string) => void
+interface PointsWithType {
+  type: PCDType
+  points: PCDPoints
+}
+
+export interface PartOfPCD {
+  type: PCDType.Part
+  positions?: Float32Array
+  isFinish?: boolean
+}
+export interface FullPCD {
+  type: PCDType.Full
+  data: ArrayBuffer | string
+}
+
+export type PCDPack = PartOfPCD | FullPCD
+
+function isPartOfPCD(value: unknown): value is PartOfPCD {
+  return (value as PCDPack).type === PCDType.Part
+}
+
+interface UsePCDOptions {
+  file?: MaybeRef<string>
+  onLoad: (points?: PointsWithType, oldPoints?: PointsWithType) => void
 }
 
 export function usePCD({ file, onLoad }: UsePCDOptions) {
   const loader = new PCDLoader()
-  const pcdObject = ref<PCDPoints>()
+  const pcdObject = ref<PointsWithType>()
 
   if (file) {
     watch(() => unref(file), async (value) => {
       const points = await loader.loadAsync(value)
-      onLoad(points, toRaw(pcdObject.value))
+      const obj = { type: PCDType.Full, points }
+      onLoad(obj, toRaw(pcdObject.value))
 
-      pcdObject.value = points
+      pcdObject.value = obj
     }, { immediate: true })
   }
 
-  const loadPCDFile = (data: ArrayBuffer | string) => {
-    const points = loader.parse(data)
-    onLoad(points, toRaw(pcdObject.value))
+  const loadPartOfPCDFile = (partOfData: PartOfPCD) => {
+    if (partOfData.isFinish) {
+      onLoad(undefined, toRaw(pcdObject.value))
+      // 合并所有pcd
+      return
+    }
 
-    pcdObject.value = points
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(partOfData.positions!, 3))
+
+    const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: false })
+    const points = new THREE.Points(geometry, material)
+    const obj = { type: PCDType.Part, points }
+    onLoad(obj, toRaw(pcdObject.value))
+
+    pcdObject.value = obj
+  }
+
+  const loadPCDFile = (pcd: PCDPack) => {
+    if (isPartOfPCD(pcd)) {
+      loadPartOfPCDFile(pcd)
+      return
+    }
+
+    const points = loader.parse(pcd.data)
+    const obj = { type: PCDType.Full, points }
+    onLoad(obj, toRaw(pcdObject.value))
+
+    pcdObject.value = obj
   }
 
   return { pcdObject, loadPCDFile }

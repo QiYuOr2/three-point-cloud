@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
+import type { PCDHeader } from '../common/file'
+import type { PCDPack } from '../composables/usePCD'
 import { useFileDialog } from '@vueuse/core'
 import { ref } from 'vue'
+import { SHOULD_SPLIT_FILE_SIZE, SPLITED_FILE_SIZE } from '../common/constants'
+import { binaryDataHandler, mergeUint8Arrays, readHeader } from '../common/file'
+import { PCDType } from '../composables/usePCD'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 
 const emits = defineEmits<{
-  (event: 'upload', file: ArrayBuffer | string): void
+  (event: 'upload', file: PCDPack): void
   (event: 'addColor'): void
   (event: 'cancel'): void
 }>()
@@ -43,20 +48,67 @@ const { open, onChange } = useFileDialog({
   multiple: false,
 })
 
+function smallFileReader(file: File) {
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    if (!e.target?.result) {
+      return
+    }
+    emits('upload', { type: PCDType.Full, data: e.target.result })
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
+  const reader = fileStream.getReader()
+
+  let data = new Uint8Array()
+
+  let header = ''
+  let headerObject = {} as PCDHeader
+
+  while (true) {
+    const { value, done } = await reader.read()
+
+    if (done) {
+      emits('upload', { type: PCDType.Part, isFinish: true })
+      return
+    }
+
+    if (!header) {
+      const { headerText, headerObject: _headerObj, headerLength } = readHeader(value)
+      header = headerText
+      headerObject = _headerObj
+
+      const otherData = value.slice(headerLength)
+      data = new Uint8Array(otherData.length)
+      data.set(otherData)
+      continue
+    }
+
+    data = mergeUint8Arrays(data, value)
+
+    if (data.byteLength >= SPLITED_FILE_SIZE) {
+      const { otherData, positions } = binaryDataHandler(data, headerObject)
+      emits('upload', { type: PCDType.Part, positions })
+
+      data = otherData
+    }
+  }
+}
+
 onChange((files) => {
   if (!files) {
     return
   }
 
   const file = files[0]
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    if (!e.target?.result) {
-      return
-    }
-    emits('upload', e.target.result)
+
+  if (file.size < SHOULD_SPLIT_FILE_SIZE) {
+    smallFileReader(file)
+    return
   }
-  reader.readAsArrayBuffer(file)
+  bigFileReader(file.stream())
 })
 </script>
 
