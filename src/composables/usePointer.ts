@@ -14,7 +14,7 @@ interface UsePointerOptions {
    * @param event - PointerEvent 事件对象
    * @param point - 当前指针位置坐标
    */
-  onTrigger: (event: PointerEvent, point: Point) => void
+  onTrigger: (event: PointerEvent, point: Point, isPressed: boolean) => void
   /**
    * 自定义指针位置转换函数
    * @param event - PointerEvent 事件对象
@@ -55,7 +55,7 @@ export function usePointer({ element, onTrigger, pointerPositionTransfer, onPres
     x.value = point.x
     y.value = point.y
 
-    onTrigger(event, point)
+    onTrigger(event, point, isPressed.value)
   }
 
   watch(isPressed, value => onPressedChange?.(value))

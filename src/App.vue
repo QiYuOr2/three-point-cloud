@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { polygonContains } from 'd3-polygon'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { PCDLoader } from 'three/addons/loaders/PCDLoader.js'
@@ -7,7 +8,7 @@ import { usePointer } from './composables/usePointer'
 import { useSafeWindowEventListener } from './composables/useSafeEventListener'
 import { useThree } from './composables/useThree'
 import { IsMac } from './constants'
-import { toNDCPosition } from './utils'
+import { computePolygonPoints, toNDCPosition, toZPosition } from './utils'
 
 const container = ref<HTMLElement>(null!)
 const { scene, camera, renderer } = useThree({ container, showAxes: true })
@@ -24,9 +25,24 @@ const ModelOptionMap: Record<string, any> = {
   },
 }
 
-const laoder = new PCDLoader()
+const loader = new PCDLoader()
+const pcdObject = ref<THREE.Points<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.PointsMaterial, THREE.Object3DEventMap>>()
+loader.load(pcd.value, (points) => {
+  if (!points.geometry.attributes.color) {
+    const count = points.geometry.attributes.position.array.length / 3
+    const colors = new Float32Array(count * 3)
 
-laoder.load(pcd.value, (points) => {
+    for (let i = 0; i < count - 3; i++) {
+      const index = i * 3
+      colors[index] = 1.0
+      colors[index + 1] = 1.0
+      colors[index + 2] = 1.0
+    }
+    points.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    points.material.vertexColors = true
+  }
+
+  pcdObject.value = points
   scene.add(points)
 
   camera.position.set(
@@ -45,11 +61,31 @@ const line = new THREE.Line(geometry, material)
 scene.add(line)
 const points: Array<THREE.Vector3> = []
 
-const lassoDrawing = ref(0)
-
-function drawLine() {
+function drawLasso(points: THREE.Vector3[]) {
   const positions = new Float32Array(points.flatMap(p => [p.x, p.y, p.z]))
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+}
+
+function computePointsInLasso(lasso: [number, number][]) {
+  if (!pcdObject.value) {
+    return
+  }
+  const positions = pcdObject.value.geometry.attributes.position.array
+  const length = positions.length / 3
+  const colors = pcdObject.value.geometry.attributes.color.array
+  const isContainsPointsIndex = new Set()
+
+  for (let i = 0; i < length; i++) {
+    const index = i * 3
+    if (polygonContains(lasso, [positions[index], positions[index + 1]])) {
+      isContainsPointsIndex.add(index)
+      colors[index] = 0.3
+      colors[index + 1] = 0.3
+      colors[index + 2] = 0.8
+    }
+  }
+
+  pcdObject.value.geometry.attributes.color.needsUpdate = true
 }
 
 usePointer({
@@ -60,22 +96,17 @@ usePointer({
       return
     }
 
-    // NDC坐标 -> 3D 空间坐标  camera 视线方向上的一点
-    const vector = new THREE.Vector3(point.x, point.y, 0).unproject(camera)
-    // camera 指向 改点 的单位向量
-    const direction = vector.sub(camera.position).normalize()
-    const distance = -camera.position.z / direction.z
-    const position = camera.position.clone().add(direction.multiplyScalar(distance))
+    const position = toZPosition(camera, point)
 
     points.push(new THREE.Vector3(position.x, position.y, 0))
 
-    lassoDrawing.value = requestAnimationFrame(() => drawLine())
+    drawLasso(points)
   },
   onPressedChange: (isPressed) => {
-    if (!isPressed && lassoDrawing.value) {
-      points.push(points[0])
-      drawLine()
-      cancelAnimationFrame(lassoDrawing.value)
+    if (!isPressed) {
+      const polygon = computePolygonPoints(points)
+      drawLasso(polygon.points)
+      computePointsInLasso(polygon.array)
     }
 
     if (isPressed) {
