@@ -1,4 +1,4 @@
-import type { Camera, Vector2Like } from 'three'
+import type { Camera, TypedArray, Vector2Like } from 'three'
 import { polygonHull } from 'd3-polygon'
 import { Vector3 } from 'three'
 
@@ -22,10 +22,22 @@ export function toZPosition(camera: Camera, point: Vector2Like) {
 }
 
 export function computePolygonPoints(points: Vector3[]) {
-  const computedPoints = polygonHull(points.map(point => [point.x, point.y])) ?? []
+  const computedPoints = polygonHull(points.map(point => [point.x, point.y]))
 
+  if (!computedPoints) {
+    return { points: [], array: [] }
+  }
 
   computedPoints.push(computedPoints[0])
 
   return { points: computedPoints.map(([x, y]) => new Vector3(x, y, 0)), array: computedPoints }
+}
+
+type RGBArray = [number, number, number]
+type RGBAArray = [number, number, number, number]
+export function setColor(colors: TypedArray, index: number, value: RGBArray | RGBAArray) {
+  colors[index] = value[0]
+  colors[index + 1] = value[1]
+  colors[index + 2] = value[2]
+  colors[index + 3] = value[3] ?? 1
 }

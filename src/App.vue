@@ -1,57 +1,45 @@
 <script setup lang="ts">
 import { polygonContains } from 'd3-polygon'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { PCDLoader } from 'three/addons/loaders/PCDLoader.js'
+import { ArcballControls } from 'three/addons/controls/ArcballControls.js'
 import { ref } from 'vue'
+import Tools from './components/Tools.vue'
+import { usePCD } from './composables/usePCD'
 import { usePointer } from './composables/usePointer'
 import { useSafeWindowEventListener } from './composables/useSafeEventListener'
 import { useThree } from './composables/useThree'
-import { IsMac } from './constants'
-import { computePolygonPoints, toNDCPosition, toZPosition } from './utils'
+import { computePolygonPoints, setColor, toNDCPosition, toZPosition } from './utils'
 
 const container = ref<HTMLElement>(null!)
 const { scene, camera, renderer } = useThree({ container, showAxes: true })
 
-const controls = new OrbitControls(camera, renderer.domElement)
+const controls = new ArcballControls(camera, renderer.domElement)
 controls.enabled = false
 
-const pcd = ref('0000.pcd')
-
-const ModelOptionMap: Record<string, any> = {
-  '0000.pcd': {
-    position: { x: -0.5, y: -13, z: 6.3 },
-    rotation: { x: 1.12, y: 0, z: 0.06 },
-  },
-}
-
-const loader = new PCDLoader()
-const pcdObject = ref<THREE.Points<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.PointsMaterial, THREE.Object3DEventMap>>()
-loader.load(pcd.value, (points) => {
-  if (!points.geometry.attributes.color) {
-    const count = points.geometry.attributes.position.array.length / 3
-    const colors = new Float32Array(count * 3)
-
-    for (let i = 0; i < count - 3; i++) {
-      const index = i * 3
-      colors[index] = 1.0
-      colors[index + 1] = 1.0
-      colors[index + 2] = 1.0
-    }
-    points.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    points.material.vertexColors = true
+const { pcdObject, loadPCDFile } = usePCD({ file: '0000.pcd', onLoad: (points, oldPoints) => {
+  if (oldPoints) {
+    oldPoints.geometry.dispose()
+    oldPoints.material.dispose()
+    scene.remove(oldPoints)
   }
 
-  pcdObject.value = points
+  if (!points.geometry.attributes.color) {
+    const count = points.geometry.attributes.position.array.length / 3
+    const colors = new Float32Array(count * 4)
+
+    for (let i = 0; i < count; i++) {
+      setColor(colors, i * 4, [1, 1, 1, 1])
+    }
+
+    points.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4))
+    points.material.vertexColors = true
+    points.material.transparent = true
+  }
+
   scene.add(points)
 
-  camera.position.set(
-    ModelOptionMap[pcd.value].position.x,
-    ModelOptionMap[pcd.value].position.y,
-    ModelOptionMap[pcd.value].position.z,
-  )
   controls.update()
-})
+} })
 
 const isCtrlPressed = ref(false)
 
@@ -66,26 +54,48 @@ function drawLasso(points: THREE.Vector3[]) {
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
 }
 
+const selectPointsIndex: number[] = []
+let basicColor: THREE.BufferAttribute
 function computePointsInLasso(lasso: [number, number][]) {
-  if (!pcdObject.value) {
+  if (!pcdObject.value || !lasso.length) {
     return
   }
   const positions = pcdObject.value.geometry.attributes.position.array
-  const length = positions.length / 3
+  basicColor = pcdObject.value.geometry.attributes.color.clone()
   const colors = pcdObject.value.geometry.attributes.color.array
-  const isContainsPointsIndex = new Set()
 
-  for (let i = 0; i < length; i++) {
-    const index = i * 3
-    if (polygonContains(lasso, [positions[index], positions[index + 1]])) {
-      isContainsPointsIndex.add(index)
-      colors[index] = 0.3
-      colors[index + 1] = 0.3
-      colors[index + 2] = 0.8
+  for (let posIndex = 0; posIndex < positions.length; posIndex += 3) {
+    const x = positions[posIndex]
+    const y = positions[posIndex + 1]
+    const pointIndex = posIndex / 3
+    const colorIndex = pointIndex * 4
+
+    if (polygonContains(lasso, [x, y])) {
+      selectPointsIndex.push(pointIndex)
+      colors[colorIndex + 3] = 1
+      continue
     }
+    colors[colorIndex + 3] = 0
   }
 
   pcdObject.value.geometry.attributes.color.needsUpdate = true
+}
+
+function addColor() {
+  if (!pcdObject.value) {
+    return
+  }
+  pcdObject.value.geometry.setAttribute('color', basicColor)
+  const colors = pcdObject.value.geometry.attributes.color.array
+  selectPointsIndex.forEach((index) => {
+    const colorIndex = index * 4
+    setColor(colors, colorIndex, [0, 0.2, 0.5])
+  })
+  pcdObject.value.geometry.attributes.color.needsUpdate = true
+}
+
+function cancel() {
+  pcdObject.value?.geometry.setAttribute('color', basicColor)
 }
 
 usePointer({
@@ -104,8 +114,8 @@ usePointer({
   },
   onPressedChange: (isPressed) => {
     if (!isPressed) {
+      drawLasso([])
       const polygon = computePolygonPoints(points)
-      drawLasso(polygon.points)
       computePointsInLasso(polygon.array)
     }
 
@@ -117,14 +127,14 @@ usePointer({
 })
 
 function enableControlsChange(event: KeyboardEvent) {
-  if (IsMac ? event.metaKey : event.ctrlKey) {
+  if (event.code === 'Space') {
     isCtrlPressed.value = true
     controls.enabled = true
   }
 }
 
 function disableControlsChange(event: KeyboardEvent) {
-  if (!event.metaKey && !event.ctrlKey) {
+  if (event.code === 'Space') {
     isCtrlPressed.value = false
     controls.enabled = false
   }
@@ -135,5 +145,7 @@ useSafeWindowEventListener('keyup', disableControlsChange)
 </script>
 
 <template>
-  <div ref="container" w-full h-screen />
+  <div ref="container" w-full h-screen>
+    <Tools @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" />
+  </div>
 </template>

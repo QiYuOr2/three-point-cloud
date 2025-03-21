@@ -50,7 +50,8 @@ export function useThree(options: UseThreeOptions) {
   onMounted(() => {
     renderer.setSize(window.innerWidth, window.innerHeight)
     options.container.value?.appendChild(renderer.domElement)
-    camera.position.z = 5
+    camera.up.set(0, 0, 1)
+    camera.position.set(0, -10, 5)
 
     animate()
   })
