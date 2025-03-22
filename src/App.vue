@@ -67,6 +67,7 @@ const { pcdObject, loadPCDFile } = usePCD({ onLoad: (pcd, oldPcd) => {
   }
 
   controls.update()
+  controls.saveState()
 } })
 
 const { loassoPoints, drawLasso, computePointsInLasso, cancel, addColor } = useLoasso({ scene, pcdObject })
@@ -107,10 +108,14 @@ useSafeWindowEventListener('keyup', (event: KeyboardEvent) => {
     controls.enabled = false
   }
 })
+
+function resetCamera() {
+  controls.reset()
+}
 </script>
 
 <template>
   <div ref="container" w-full h-screen>
-    <Tools @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" />
+    <Tools @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
   </div>
 </template>

@@ -1,4 +1,4 @@
-import type { Camera, Points, TypedArray, Vector2Like } from 'three'
+import type { Camera, TypedArray, Vector2Like } from 'three'
 import { polygonHull } from 'd3-polygon'
 import { Vector3 } from 'three'
 

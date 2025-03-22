@@ -8,7 +8,7 @@ import { setColor } from '../common/utils'
 
 interface UseLoassoOptions {
   scene: THREE.Scene
-  pcdObject: Ref<PointsWithType | undefined>
+  pcdObject: Ref<PointsWithType>
 }
 
 export function useLoasso({ scene, pcdObject }: UseLoassoOptions) {
@@ -37,7 +37,7 @@ export function useLoasso({ scene, pcdObject }: UseLoassoOptions) {
    */
   function computePointsInLasso(lasso: [number, number][]) {
     const start = window.performance.now()
-    if (!pcdObject.value || !lasso.length) {
+    if (!Object.keys(pcdObject.value).length || !lasso.length) {
       return
     }
     const positions = pcdObject.value.points.geometry.attributes.position.array
@@ -63,7 +63,7 @@ export function useLoasso({ scene, pcdObject }: UseLoassoOptions) {
     }
 
     pcdObject.value.points.geometry.attributes.color.needsUpdate = true
-    console.log(`[computePointsInLasso] ${window.performance.now() - start} ms`)
+    console.warn(`[computePointsInLasso] ${window.performance.now() - start} ms`)
   }
 
   function addColor() {

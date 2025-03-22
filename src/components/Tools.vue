@@ -13,6 +13,7 @@ const emits = defineEmits<{
   (event: 'upload', file: PCDPack): void
   (event: 'addColor'): void
   (event: 'cancel'): void
+  (event: 'reset'): void
 }>()
 
 document.oncontextmenu = () => false
@@ -166,6 +167,12 @@ onChange((files) => {
       <span>/</span>
       <kbd class="key" :class="[{ 'text-cyan-500 border-cyan-500': isMouseRightPressed }]">鼠标右键</kbd>
       <span>转动视角</span>
+    </div>
+
+    <div class="divider-v mx-3" />
+
+    <div button @click="$emit('reset')">
+      相机复位
     </div>
 
     <div class="divider-v mx-3" />

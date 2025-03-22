@@ -2,7 +2,7 @@ import type { MaybeRef } from 'vue'
 import * as THREE from 'three'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
 import { ref, toRaw, unref, watch } from 'vue'
-import { POINT_SIZE } from '../common/constants'
+import { PCD_SPLIT_NUM, POINT_SIZE } from '../common/constants'
 
 type PCDPoints = THREE.Points<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.PointsMaterial, THREE.Object3DEventMap>
 
@@ -59,8 +59,43 @@ export function usePCD({ file, onLoad }: UsePCDOptions) {
   }
 
   const loadPartOfPCDFile = (partOfData: PartOfPCD) => {
+    const blocks = new Map<string, Array<number>>()
+
+    const { min, max } = partOfData.bounds
+    const blockSize = [
+      (max[0] - min[0]) / PCD_SPLIT_NUM,
+      (max[1] - min[1]) / PCD_SPLIT_NUM,
+      (max[2] - min[2]) / PCD_SPLIT_NUM,
+    ]
+
+    const positions = partOfData.positions
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i]
+      const y = positions[i + 1]
+      const z = positions[i + 2]
+
+      // 计算点所在的 block 索引
+      const blockX = Math.floor((x - min[0]) / blockSize[0])
+      const blockY = Math.floor((y - min[1]) / blockSize[1])
+      const blockZ = Math.floor((z - min[2]) / blockSize[2])
+      const blockKey = `${blockX}_${blockY}_${blockZ}`
+
+      // 初始化 block
+      if (!blocks.has(blockKey)) {
+        blocks.set(blockKey, [])
+      }
+
+      // 将点添加到 block
+      const block = blocks.get(blockKey)!
+      block.push(x, y, z)
+
+      blocks.set(blockKey, block)
+    }
+
+    // console.log(Array.from(blocks.values())[0])
+
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(partOfData.positions, 3))
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Array.from(blocks.values())[0]), 3))
 
     const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: true })
     const points = new THREE.Points(geometry, material)
