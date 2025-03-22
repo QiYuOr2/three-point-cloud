@@ -11,14 +11,14 @@ export enum PCDType {
   Part,
 }
 
-interface PointsWithType {
+export interface PointsWithType {
   type: PCDType
   points: PCDPoints
 }
 
 export interface PartOfPCD {
   type: PCDType.Part
-  positions?: Float32Array
+  positions: Float32Array
   isFinish?: boolean
 }
 export interface FullPCD {
@@ -34,12 +34,12 @@ function isPartOfPCD(value: unknown): value is PartOfPCD {
 
 interface UsePCDOptions {
   file?: MaybeRef<string>
-  onLoad: (points?: PointsWithType, oldPoints?: PointsWithType) => void
+  onLoad: (points: PointsWithType, oldPoints: PointsWithType) => void
 }
 
 export function usePCD({ file, onLoad }: UsePCDOptions) {
   const loader = new PCDLoader()
-  const pcdObject = ref<PointsWithType>()
+  const pcdObject = ref<PointsWithType>({} as PointsWithType)
 
   if (file) {
     watch(() => unref(file), async (value) => {
@@ -52,18 +52,12 @@ export function usePCD({ file, onLoad }: UsePCDOptions) {
   }
 
   const loadPartOfPCDFile = (partOfData: PartOfPCD) => {
-    if (partOfData.isFinish) {
-      onLoad(undefined, toRaw(pcdObject.value))
-      // 合并所有pcd
-      return
-    }
-
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(partOfData.positions!, 3))
+    geometry.setAttribute('position', new THREE.BufferAttribute(partOfData.positions, 3))
 
-    const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: false })
+    const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: true })
     const points = new THREE.Points(geometry, material)
-    const obj = { type: PCDType.Part, points }
+    const obj = { type: partOfData.isFinish ? PCDType.Full : partOfData.type, points }
     onLoad(obj, toRaw(pcdObject.value))
 
     pcdObject.value = obj

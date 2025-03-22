@@ -5,7 +5,7 @@ import type { PCDPack } from '../composables/usePCD'
 import { useFileDialog } from '@vueuse/core'
 import { ref } from 'vue'
 import { SHOULD_SPLIT_FILE_SIZE, SPLITED_FILE_SIZE } from '../common/constants'
-import { binaryDataHandler, mergeUint8Arrays, readHeader } from '../common/file'
+import { binaryDataHandler, mergeTypeArray, readHeader } from '../common/file'
 import { PCDType } from '../composables/usePCD'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 
@@ -66,13 +66,13 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
 
   let header = ''
   let headerObject = {} as PCDHeader
+  let totalPositions = new Float32Array()
 
   while (true) {
     const { value, done } = await reader.read()
 
     if (done) {
-      emits('upload', { type: PCDType.Part, isFinish: true })
-      return
+      break
     }
 
     if (!header) {
@@ -86,15 +86,18 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
       continue
     }
 
-    data = mergeUint8Arrays(data, value)
+    data = mergeTypeArray(data, value, Uint8Array)
 
-    if (data.byteLength >= SPLITED_FILE_SIZE) {
+    if (data.byteLength >= SPLITED_FILE_SIZE || value.byteLength < SPLITED_FILE_SIZE) {
       const { otherData, positions } = binaryDataHandler(data, headerObject)
-      emits('upload', { type: PCDType.Part, positions })
+      // emits('upload', { type: PCDType.Part, positions })
+      totalPositions = mergeTypeArray(totalPositions, positions, Float32Array)
 
       data = otherData
     }
   }
+
+  emits('upload', { type: PCDType.Part, positions: totalPositions, isFinish: true })
 }
 
 onChange((files) => {

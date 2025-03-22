@@ -56,8 +56,8 @@ export function readHeader(unit8Array: Uint8Array) {
   return { headerText: header, headerLength, headerObject, headerUnit8Array }
 }
 
-export function mergeUint8Arrays(dataA: Uint8Array, dataB: Uint8Array) {
-  const mergedArray = new Uint8Array(dataA.length + dataB.length)
+export function mergeTypeArray<T extends Uint8Array | Float32Array>(dataA: T, dataB: T, fn: { new (length: number): T }) {
+  const mergedArray = new fn(dataA.length + dataB.length)
   mergedArray.set(dataA, 0)
   mergedArray.set(dataB, dataA.length)
 
