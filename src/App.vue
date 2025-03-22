@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { PointsWithType } from './composables/usePCD'
 import * as THREE from 'three'
 import { ArcballControls } from 'three/addons/controls/ArcballControls.js'
 import { ref } from 'vue'
 import { computePolygonPoints, setColor, toNDCPosition, toZPosition } from './common/utils'
 import Tools from './components/Tools.vue'
 import { useLoasso } from './composables/useLasso'
-import { PCDType, usePCD, type PointsWithType } from './composables/usePCD'
+import { PCDType, usePCD } from './composables/usePCD'
 import { usePointer } from './composables/usePointer'
 import { useSafeWindowEventListener } from './composables/useSafeEventListener'
 import { useThree } from './composables/useThree'
@@ -32,11 +33,10 @@ const { pcdObject, loadPCDFile } = usePCD({ onLoad: (pcd, oldPcd) => {
       pcd.points.material.transparent = true
     }
   }
-  
- 
+
   if (oldPcd.type === PCDType.Full || pcd.type === PCDType.Full) {
     let i = 0
-    while(scene.children.length > i) {
+    while (scene.children.length > i) {
       if (scene.children[i].type !== 'Points') {
         i++
         continue
@@ -48,6 +48,23 @@ const { pcdObject, loadPCDFile } = usePCD({ onLoad: (pcd, oldPcd) => {
   addVertexColor(pcd)
 
   scene.add(pcd.points)
+
+  if (pcd.bounds) {
+    // ### bounds ###
+    const { min, max } = pcd.bounds
+    const geometry = new THREE.BoxGeometry(max[0] - min[0], max[1] - min[1], max[2] - min[2])
+    const edges = new THREE.EdgesGeometry(geometry)
+    const line = new THREE.LineSegments(
+      edges,
+      new THREE.LineBasicMaterial({ color: 0x00FF00 }),
+    )
+    line.position.set(
+      (min[0] + max[0]) / 2,
+      (min[1] + max[1]) / 2,
+      (min[2] + max[2]) / 2,
+    )
+    scene.add(line)
+  }
 
   controls.update()
 } })

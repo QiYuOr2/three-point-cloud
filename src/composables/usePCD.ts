@@ -11,14 +11,21 @@ export enum PCDType {
   Part,
 }
 
+interface Bounds {
+  min: [number, number, number]
+  max: [number, number, number]
+}
+
 export interface PointsWithType {
   type: PCDType
   points: PCDPoints
+  bounds?: Bounds
 }
 
 export interface PartOfPCD {
   type: PCDType.Part
   positions: Float32Array
+  bounds: Bounds
   isFinish?: boolean
 }
 export interface FullPCD {
@@ -57,7 +64,11 @@ export function usePCD({ file, onLoad }: UsePCDOptions) {
 
     const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: true })
     const points = new THREE.Points(geometry, material)
-    const obj = { type: partOfData.isFinish ? PCDType.Full : partOfData.type, points }
+    const obj = {
+      type: partOfData.isFinish ? PCDType.Full : partOfData.type,
+      points,
+      bounds: partOfData.bounds,
+    }
     onLoad(obj, toRaw(pcdObject.value))
 
     pcdObject.value = obj

@@ -68,6 +68,8 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
   let headerObject = {} as PCDHeader
   let totalPositions = new Float32Array()
 
+  const edges: Array<[[number, number, number], [number, number, number]]> = []
+
   while (true) {
     const { value, done } = await reader.read()
 
@@ -91,13 +93,52 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
     if (data.byteLength >= SPLITED_FILE_SIZE || value.byteLength < SPLITED_FILE_SIZE) {
       const { otherData, positions } = binaryDataHandler(data, headerObject)
       // emits('upload', { type: PCDType.Part, positions })
-      totalPositions = mergeTypeArray(totalPositions, positions, Float32Array)
 
+      // 计算边界值
+      let [minX, minY, minZ] = [Infinity, Infinity, Infinity]
+      let [maxX, maxY, maxZ] = [-Infinity, -Infinity, -Infinity]
+
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i]
+        const y = positions[i + 1]
+        const z = positions[i + 2]
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        minZ = Math.min(minZ, z)
+        maxX = Math.max(maxX, x)
+        maxY = Math.max(maxY, y)
+        maxZ = Math.max(maxZ, z)
+      }
+
+      edges.push([[minX, minY, minZ], [maxX, maxY, maxZ]])
+
+      totalPositions = mergeTypeArray(totalPositions, positions, Float32Array)
       data = otherData
     }
   }
 
-  emits('upload', { type: PCDType.Part, positions: totalPositions, isFinish: true })
+  // 计算最终边界
+  let [finalMinX, finalMinY, finalMinZ] = [Infinity, Infinity, Infinity]
+  let [finalMaxX, finalMaxY, finalMaxZ] = [-Infinity, -Infinity, -Infinity]
+
+  for (const [[minX, minY, minZ], [maxX, maxY, maxZ]] of edges) {
+    finalMinX = Math.min(finalMinX, minX)
+    finalMinY = Math.min(finalMinY, minY)
+    finalMinZ = Math.min(finalMinZ, minZ)
+    finalMaxX = Math.max(finalMaxX, maxX)
+    finalMaxY = Math.max(finalMaxY, maxY)
+    finalMaxZ = Math.max(finalMaxZ, maxZ)
+  }
+
+  emits('upload', {
+    type: PCDType.Part,
+    positions: totalPositions,
+    isFinish: true,
+    bounds: {
+      min: [finalMinX, finalMinY, finalMinZ],
+      max: [finalMaxX, finalMaxY, finalMaxZ],
+    },
+  })
 }
 
 onChange((files) => {
