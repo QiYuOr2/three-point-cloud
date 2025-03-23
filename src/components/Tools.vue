@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
-import type { PCDHeader } from '../common/file'
 import type { PCDFileData } from '../composables/usePCD'
-import { useFileDialog } from '@vueuse/core'
-import { ref } from 'vue'
-import { SHOULD_SPLIT_FILE_SIZE, SPLITED_FILE_SIZE } from '../common/constants'
-import { binaryDataHandler, mergeTypeArray, readHeader } from '../common/file'
-import { positionsToVector3Like } from '../common/utils'
+import { useFileDialog, useWebWorker } from '@vueuse/core'
+import { onUnmounted, ref } from 'vue'
+import { SHOULD_SPLIT_FILE_SIZE } from '../common/constants'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
+
+defineProps<{
+  blockCount: number
+}>()
 
 const emits = defineEmits<{
   (event: 'upload', PCD: PCDFileData): void
@@ -60,65 +61,34 @@ function smallFileReader(file: File) {
   reader.readAsArrayBuffer(file)
 }
 
-async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
-  const reader = fileStream.getReader()
+const loadingStep = ref<[number, number]>([0, 0])
 
-  let data = new Uint8Array()
+const { worker } = useWebWorker(() => new Worker(
+  new URL('../workers/fileReader.worker.ts', import.meta.url),
+  { type: 'module' },
+))
 
-  let header = ''
-  let headerObject = {} as PCDHeader
-  let totalPositions = new Float32Array()
-
-  // 计算边界值
-  let [minX, minY, minZ] = [Infinity, Infinity, Infinity]
-  let [maxX, maxY, maxZ] = [-Infinity, -Infinity, -Infinity]
-
-  while (true) {
-    const { value, done } = await reader.read()
-
-    if (done) {
-      break
-    }
-
-    if (!header) {
-      const { headerText, headerObject: _headerObj, headerLength } = readHeader(value)
-      header = headerText
-      headerObject = _headerObj
-
-      const otherData = value.slice(headerLength)
-      data = new Uint8Array(otherData.length)
-      data.set(otherData)
-      continue
-    }
-
-    data = mergeTypeArray(data, value, Uint8Array)
-
-    if (data.byteLength >= SPLITED_FILE_SIZE || value.byteLength < SPLITED_FILE_SIZE) {
-      const { otherData, positions } = binaryDataHandler(data, headerObject)
-      // emits('upload', { type: PCDType.Part, positions })
-
-      positionsToVector3Like(positions, ({ x, y, z }) => {
-        minX = Math.min(minX, x)
-        minY = Math.min(minY, y)
-        minZ = Math.min(minZ, z)
-        maxX = Math.max(maxX, x)
-        maxY = Math.max(maxY, y)
-        maxZ = Math.max(maxZ, z)
-      })
-
-      totalPositions = mergeTypeArray(totalPositions, positions, Float32Array)
-      data = otherData
-    }
+function onMessage(event: MessageEvent) {
+  const { positions, bounds, step } = event.data
+  if (positions) {
+    emits('upload', {
+      positions,
+      isFinish: true,
+      bounds,
+    })
   }
+  loadingStep.value = step
+}
 
-  emits('upload', {
-    positions: totalPositions,
-    isFinish: true,
-    bounds: {
-      min: { x: minX, y: minY, z: minZ },
-      max: { x: maxX, y: maxY, z: maxZ },
-    },
-  })
+onUnmounted(() => worker.value?.removeEventListener('message', onMessage))
+
+async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
+  if (!worker.value) {
+    return
+  }
+  worker.value.postMessage({ fileStream }, [fileStream])
+
+  worker.value.addEventListener('message', onMessage)
 }
 
 onChange((files) => {
@@ -174,5 +144,16 @@ onChange((files) => {
     <div button ml-3 @click="$emit('cancel')">
       取消
     </div>
+
+    <template v-if="loadingStep[0]">
+      <div class="divider-v mx-3" />
+      <div>
+        {{ `${Math.round(loadingStep[0] / loadingStep[1] * 10000) / 100}%` }}
+      </div>
+      <template v-if="loadingStep[0] === loadingStep[1]">
+        <div class="divider-v mx-3" />
+        <div>分区数：{{ blockCount || '计算中' }}</div>
+      </template>
+    </template>
   </div>
 </template>

@@ -30,7 +30,7 @@ export function toZPosition(camera: THREE.Camera, point: THREE.Vector2Like) {
   return position
 }
 
-type RGBArray = [number, number, number]
+export type RGBArray = [number, number, number]
 type RGBAArray = [number, number, number, number]
 export function setColor(colors: THREE.TypedArray, index: number, value: RGBArray | RGBAArray) {
   colors[index] = value[0]
@@ -100,4 +100,10 @@ export function addVertexColor(points: PCDPoints) {
     points.material.vertexColors = true
     points.material.transparent = true
   }
+}
+
+export function getVector3sBounds(vector3s: THREE.Vector3[]) {
+  const box = new THREE.Box3().setFromPoints(vector3s)
+  const { min, max } = box
+  return { min, max }
 }

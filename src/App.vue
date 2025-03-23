@@ -2,7 +2,7 @@
 import * as THREE from 'three'
 import { ArcballControls } from 'three/addons/controls/ArcballControls.js'
 import { ref } from 'vue'
-import { checkPolygonRelation, computePolygonPoints, PolygonRelation, vector3boundsToRectVertices } from './common/polygon'
+import { checkPolygonRelation, computePolygonPoints, isContainsPolygon, PolygonRelation, vector3boundsToRectVertices } from './common/polygon'
 import { toNDCPosition, toZPosition } from './common/utils'
 import Tools from './components/Tools.vue'
 import { useLoasso } from './composables/useLasso'
@@ -25,13 +25,12 @@ const { blocks, loadPCDFile } = usePCD({ onLoad: (block) => {
 
   scene.add(block.points)
 
-  // createHintBox(block.bounds.min, block.bounds.max).add(box)
-
+  // 使用requestAnimationFrame确保渲染
   controls.update()
   controls.saveState()
 } })
 
-const { loassoPoints, drawLasso, computePointsInLasso, cancel, addColor, clearSelectedPoints } = useLoasso({ scene, blocks })
+const { loassoPoints, willColoringBlockIndexes, drawLasso, computePointsInLasso, cancel, addColor, clearSelectedPoints } = useLoasso({ scene, blocks })
 const isCtrlPressed = ref(false)
 
 usePointer({
@@ -48,6 +47,10 @@ usePointer({
     drawLasso()
   },
   onPressedChange: (isPressed) => {
+    if (isCtrlPressed.value) {
+      return
+    }
+
     if (isPressed) {
       clearSelectedPoints()
       return
@@ -56,16 +59,25 @@ usePointer({
     if (!isPressed) {
       const polygon = computePolygonPoints(loassoPoints.value)
 
-      const indexes: number[] = []
+      const pointIndexes: number[] = []
 
       blocks.value.forEach((block, i) => {
         const rect = vector3boundsToRectVertices(block.bounds)
         if (checkPolygonRelation(rect, loassoPoints.value) === PolygonRelation.IntersectingOrContains) {
-          indexes.push(i)
+          // 两个多边形有相交
+          if (isContainsPolygon(loassoPoints.value, rect)) {
+            // 套索完全包含了该区域
+            blocks.value[i].shouldBlockColoring = true
+            willColoringBlockIndexes.value.push(i)
+            return
+          }
+          pointIndexes.push(i)
+          return
         }
+        block.setVisible(false)
       })
 
-      computePointsInLasso(polygon.tuple, indexes)
+      computePointsInLasso(polygon.tuple, pointIndexes)
       drawLasso(true)
     }
   },
@@ -92,5 +104,5 @@ function resetCamera() {
 
 <template>
   <div ref="container" w-full h-screen />
-  <Tools @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
+  <Tools :block-count="blocks.length" @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
 </template>

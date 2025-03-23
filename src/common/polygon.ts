@@ -31,10 +31,21 @@ export function computePolygonPoints(points: Vector3[]) {
   return { points: computedPoints.map(([x, y]) => new Vector3(x, y, 0)), tuple: computedPoints }
 }
 
+/**
+ * 有任意一点在多边形中
+ */
 function anyPointInPolygon(points: Vector2Like[], polygon: Vector2Like[]) {
   const convertedPolygon = polygon.map(vectorToTuple)
 
   return points.some(point => polygonContains(convertedPolygon, vectorToTuple(point)))
+}
+
+/**
+ * polygon 的所有点都在 wrapper 中
+ */
+export function isContainsPolygon(wrapper: Vector2Like[], polygon: Vector2Like[]) {
+  const convertedWrapper = wrapper.map(vectorToTuple)
+  return polygon.every(point => polygonContains(convertedWrapper, vectorToTuple(point)))
 }
 
 /**
@@ -50,6 +61,9 @@ export function checkPolygonRelation(polygonA: Vector2Like[], polygonB: Vector2L
   return PolygonRelation.Separated
 }
 
+/**
+ * 将 3D 空间内表示长方体的两个点转为 2D 平面的矩形
+ */
 export function vector3boundsToRectVertices({ min, max }: Bounds) {
   return polygonHull([
     [min.x, min.y],

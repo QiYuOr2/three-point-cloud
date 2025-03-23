@@ -1,11 +1,11 @@
+import type * as THREE from 'three'
 import type { MaybeRef } from 'vue'
 import type { Bounds } from '../common/polygon'
-import type { PCDPoints } from '../common/utils'
-import * as THREE from 'three'
+import type { PCDPoints, RGBArray } from '../common/utils'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
 import { ref, toRaw, unref, watch } from 'vue'
-import { PCD_SPLIT_NUM } from '../common/constants'
-import { addVertexColor, createPoints, positionsToVector3, positionsToVector3Like } from '../common/utils'
+import { COLOR, PCD_SPLIT_NUM } from '../common/constants'
+import { addVertexColor, createPoints, getVector3sBounds, positionsToVector3, positionsToVector3Like, setColor } from '../common/utils'
 
 interface PCDFromStream {
   positions: Float32Array
@@ -25,17 +25,16 @@ export type PCDFileData = PCDFromStream | PCDFromLoader
 export class Block {
   points: PCDPoints
   color?: THREE.BufferAttribute
-  willColoringPointIndexes: number[] = []
   bounds: Bounds
+  willColoringPointIndexes: number[] = []
+  shouldBlockColoring = false
 
   constructor(points: PCDPoints) {
     this.points = points
 
     const vector3s = positionsToVector3(points.geometry.attributes.position.array)
 
-    const box = new THREE.Box3().setFromPoints(vector3s)
-    const { min, max } = box
-    this.bounds = { min, max }
+    this.bounds = getVector3sBounds(vector3s)
 
     addVertexColor(this.points)
   }
@@ -62,6 +61,26 @@ export class Block {
 
   clearWillColoringPoint() {
     this.willColoringPointIndexes = []
+  }
+
+  setVisible(value: boolean) {
+    this.points.material.opacity = value ? 1 : 0
+  }
+
+  setColor([r, g, b]: RGBArray) {
+    if (this.shouldBlockColoring) {
+      this.points.material.color.setRGB(r, g, b)
+      return
+    }
+
+    this.reset('color')
+    const colors = this.points.geometry.attributes.color.array
+    this.willColoringPointIndexes.forEach((pointIndex) => {
+      const colorIndex = pointIndex * 4
+      setColor(colors, colorIndex, COLOR)
+    })
+    this.points.geometry.attributes.color.needsUpdate = true
+    this.shouldBlockColoring = false
   }
 }
 

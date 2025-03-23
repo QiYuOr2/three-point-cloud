@@ -3,7 +3,7 @@ import type { Block } from './usePCD'
 import { polygonContains } from 'd3-polygon'
 import * as THREE from 'three'
 import { ref } from 'vue'
-import { setColor } from '../common/utils'
+import { COLOR } from '../common/constants'
 
 interface UseLoassoOptions {
   scene: THREE.Scene
@@ -11,7 +11,7 @@ interface UseLoassoOptions {
 }
 
 export function useLoasso({ scene, blocks }: UseLoassoOptions) {
-  let willColoringBlockIndexes: number[] = []
+  const willColoringBlockIndexes = ref<number[]>([])
 
   const geometry = new THREE.BufferGeometry()
   const material = new THREE.LineBasicMaterial({ color: 0xFF0000 })
@@ -37,7 +37,8 @@ export function useLoasso({ scene, blocks }: UseLoassoOptions) {
     if (!needComputeblockIndexes.length || !lasso.length) {
       return
     }
-    willColoringBlockIndexes = needComputeblockIndexes.slice()
+
+    willColoringBlockIndexes.value.push(...needComputeblockIndexes)
 
     blocks.value.forEach(block => block.saveState())
 
@@ -68,36 +69,35 @@ export function useLoasso({ scene, blocks }: UseLoassoOptions) {
   }
 
   function addColor() {
-    if (!willColoringBlockIndexes.length) {
+    if (!willColoringBlockIndexes.value.length) {
       return
     }
-    willColoringBlockIndexes.forEach((index) => {
+    blocks.value.forEach(block => block.setVisible(true))
+    willColoringBlockIndexes.value.forEach((index) => {
       const block = blocks.value[index]
-      block.reset('color')
-      const colors = block.points.geometry.attributes.color.array
-      block.willColoringPointIndexes.forEach((pointIndex) => {
-        const colorIndex = pointIndex * 4
-        setColor(colors, colorIndex, [0, 0.2, 0.5])
-      })
-      block.points.geometry.attributes.color.needsUpdate = true
+      block.setColor(COLOR)
     })
   }
 
   function clearSelectedPoints() {
-    willColoringBlockIndexes.forEach((index) => {
+    willColoringBlockIndexes.value.forEach((index) => {
       blocks.value[index].clearWillColoringPoint()
     })
-    willColoringBlockIndexes = []
+    willColoringBlockIndexes.value = []
   }
 
   function cancel() {
-    blocks.value.forEach(block => block.reset('color'))
+    blocks.value.forEach((block) => {
+      block.setVisible(true)
+      block.reset('color')
+    })
   }
 
   return {
+    loassoPoints,
+    willColoringBlockIndexes,
     computePointsInLasso,
     drawLasso,
-    loassoPoints,
     addColor,
     cancel,
     clearSelectedPoints,
