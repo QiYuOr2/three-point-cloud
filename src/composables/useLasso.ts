@@ -1,6 +1,5 @@
 import type { Ref } from 'vue'
-import type { PointsWithType } from './usePCD'
-import { useToggle } from '@vueuse/core'
+import type { Block } from './usePCD'
 import { polygonContains } from 'd3-polygon'
 import * as THREE from 'three'
 import { ref } from 'vue'
@@ -8,18 +7,19 @@ import { setColor } from '../common/utils'
 
 interface UseLoassoOptions {
   scene: THREE.Scene
-  pcdObject: Ref<PointsWithType>
+  blocks: Ref<Block[]>
 }
 
-export function useLoasso({ scene, pcdObject }: UseLoassoOptions) {
+export function useLoasso({ scene, blocks }: UseLoassoOptions) {
+  let willColoringBlockIndexes: number[] = []
+
   const geometry = new THREE.BufferGeometry()
-  const material = new THREE.LineBasicMaterial({ color: 0xFFFF00 })
+  const material = new THREE.LineBasicMaterial({ color: 0xFF0000 })
   const line = new THREE.Line(geometry, material)
   scene.add(line)
 
   const loassoPoints = ref<Array<THREE.Vector3>>([])
 
-  const [isDrawing, toggleIsDrawing] = useToggle(false)
   function drawLasso(clear = false) {
     if (clear) {
       loassoPoints.value = []
@@ -29,71 +29,77 @@ export function useLoasso({ scene, pcdObject }: UseLoassoOptions) {
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   }
 
-  let selectPointsIndex: number[] = []
-  const basicColor = ref<THREE.BufferAttribute>()
-
   /**
    * 计算哪些点在套索内
    */
-  function computePointsInLasso(lasso: [number, number][]) {
+  function computePointsInLasso(lasso: [number, number][], needComputeblockIndexes: number[]) {
     const start = window.performance.now()
-    if (!Object.keys(pcdObject.value).length || !lasso.length) {
+    if (!needComputeblockIndexes.length || !lasso.length) {
       return
     }
-    const positions = pcdObject.value.points.geometry.attributes.position.array
+    willColoringBlockIndexes = needComputeblockIndexes.slice()
 
-    if (!isDrawing.value) {
-      basicColor.value = pcdObject.value.points.geometry.attributes.color.clone()
-    }
-    toggleIsDrawing(true)
-    const colors = pcdObject.value.points.geometry.attributes.color.array
+    blocks.value.forEach(block => block.saveState())
 
-    for (let posIndex = 0; posIndex < positions.length; posIndex += 3) {
-      const x = positions[posIndex]
-      const y = positions[posIndex + 1]
-      const pointIndex = posIndex / 3
-      const colorIndex = pointIndex * 4
+    needComputeblockIndexes.forEach((index) => {
+      const block = blocks.value[index]
+      const positions = block.points.geometry.attributes.position.array
 
-      if (polygonContains(lasso, [x, y])) {
-        selectPointsIndex.push(pointIndex)
-        colors[colorIndex + 3] = 1
-        continue
+      const colors = block.points.geometry.attributes.color.array
+
+      for (let posIndex = 0; posIndex < positions.length; posIndex += 3) {
+        const x = positions[posIndex]
+        const y = positions[posIndex + 1]
+        const pointIndex = posIndex / 3
+        const colorIndex = pointIndex * 4
+
+        if (polygonContains(lasso, [x, y])) {
+          block.addWillColoringPoint(pointIndex)
+          colors[colorIndex + 3] = 1
+          continue
+        }
+        colors[colorIndex + 3] = 0
       }
-      colors[colorIndex + 3] = 0
-    }
 
-    pcdObject.value.points.geometry.attributes.color.needsUpdate = true
+      block.points.geometry.attributes.color.needsUpdate = true
+    })
+
     console.warn(`[computePointsInLasso] ${window.performance.now() - start} ms`)
   }
 
   function addColor() {
-    if (!pcdObject.value) {
+    if (!willColoringBlockIndexes.length) {
       return
     }
-    toggleIsDrawing(false)
-    pcdObject.value.points.geometry.setAttribute('color', basicColor.value!)
-    const colors = pcdObject.value.points.geometry.attributes.color.array
-    selectPointsIndex.forEach((index) => {
-      const colorIndex = index * 4
-      setColor(colors, colorIndex, [0, 0.2, 0.5])
+    willColoringBlockIndexes.forEach((index) => {
+      const block = blocks.value[index]
+      block.reset('color')
+      const colors = block.points.geometry.attributes.color.array
+      block.willColoringPointIndexes.forEach((pointIndex) => {
+        const colorIndex = pointIndex * 4
+        setColor(colors, colorIndex, [0, 0.2, 0.5])
+      })
+      block.points.geometry.attributes.color.needsUpdate = true
     })
-    pcdObject.value.points.geometry.attributes.color.needsUpdate = true
-    selectPointsIndex = []
+  }
+
+  function clearSelectedPoints() {
+    willColoringBlockIndexes.forEach((index) => {
+      blocks.value[index].clearWillColoringPoint()
+    })
+    willColoringBlockIndexes = []
   }
 
   function cancel() {
-    toggleIsDrawing(false)
-    selectPointsIndex = []
-    pcdObject.value?.points.geometry.setAttribute('color', basicColor.value!)
+    blocks.value.forEach(block => block.reset('color'))
   }
 
   return {
     computePointsInLasso,
     drawLasso,
     loassoPoints,
-    basicColor,
     addColor,
-    toggleIsDrawing,
     cancel,
+    clearSelectedPoints,
   }
 }

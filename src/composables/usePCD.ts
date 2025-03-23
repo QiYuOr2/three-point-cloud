@@ -1,126 +1,146 @@
 import type { MaybeRef } from 'vue'
+import type { Bounds } from '../common/polygon'
+import type { PCDPoints } from '../common/utils'
 import * as THREE from 'three'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
 import { ref, toRaw, unref, watch } from 'vue'
-import { PCD_SPLIT_NUM, POINT_SIZE } from '../common/constants'
+import { PCD_SPLIT_NUM } from '../common/constants'
+import { addVertexColor, createPoints, positionsToVector3, positionsToVector3Like } from '../common/utils'
 
-type PCDPoints = THREE.Points<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.PointsMaterial, THREE.Object3DEventMap>
-
-export enum PCDType {
-  Full,
-  Part,
-}
-
-interface Bounds {
-  min: [number, number, number]
-  max: [number, number, number]
-}
-
-export interface PointsWithType {
-  type: PCDType
-  points: PCDPoints
-  bounds?: Bounds
-}
-
-export interface PartOfPCD {
-  type: PCDType.Part
+interface PCDFromStream {
   positions: Float32Array
   bounds: Bounds
   isFinish?: boolean
 }
-export interface FullPCD {
-  type: PCDType.Full
+interface PCDFromLoader {
   data: ArrayBuffer | string
 }
 
-export type PCDPack = PartOfPCD | FullPCD
+function isPCDFromStream(value: unknown): value is PCDFromStream {
+  return !!(value as PCDFromStream).positions
+}
 
-function isPartOfPCD(value: unknown): value is PartOfPCD {
-  return (value as PCDPack).type === PCDType.Part
+export type PCDFileData = PCDFromStream | PCDFromLoader
+
+export class Block {
+  points: PCDPoints
+  color?: THREE.BufferAttribute
+  willColoringPointIndexes: number[] = []
+  bounds: Bounds
+
+  constructor(points: PCDPoints) {
+    this.points = points
+
+    const vector3s = positionsToVector3(points.geometry.attributes.position.array)
+
+    const box = new THREE.Box3().setFromPoints(vector3s)
+    const { min, max } = box
+    this.bounds = { min, max }
+
+    addVertexColor(this.points)
+  }
+
+  saveState() {
+    if (this.color) {
+      return
+    }
+    this.color = this.points.geometry.attributes.color.clone()
+  }
+
+  reset(key: keyof Pick<Block, 'color'>) {
+    const value = this[key]
+    if (value) {
+      this.points.geometry.setAttribute(key, value.clone())
+      this.points.geometry.attributes[key].needsUpdate = true
+      this[key] = undefined
+    }
+  }
+
+  addWillColoringPoint(index: number) {
+    this.willColoringPointIndexes.push(index)
+  }
+
+  clearWillColoringPoint() {
+    this.willColoringPointIndexes = []
+  }
 }
 
 interface UsePCDOptions {
-  file?: MaybeRef<string>
-  onLoad: (points: PointsWithType, oldPoints: PointsWithType) => void
+  filePath?: MaybeRef<string>
+  onLoad: (block: Block) => void
 }
 
-export function usePCD({ file, onLoad }: UsePCDOptions) {
+export function usePCD({ filePath, onLoad }: UsePCDOptions) {
   const loader = new PCDLoader()
-  const pcdObject = ref<PointsWithType>({} as PointsWithType)
+  const blocks = ref<Block[]>([])
 
-  if (file) {
-    watch(() => unref(file), async (value) => {
+  const _onLoad = (value: Block) => onLoad(toRaw(value))
+
+  if (filePath) {
+    watch(() => unref(filePath), async (value) => {
       const points = await loader.loadAsync(value)
-      const obj = { type: PCDType.Full, points }
-      onLoad(obj, toRaw(pcdObject.value))
-
-      pcdObject.value = obj
+      blocks.value = [new Block(points)]
+      _onLoad(blocks.value[0])
     }, { immediate: true })
   }
 
-  const loadPartOfPCDFile = (partOfData: PartOfPCD) => {
-    const blocks = new Map<string, Array<number>>()
+  const fromStream = (options: PCDFromStream) => {
+    const blockMap = new Map<string, Array<number>>()
 
-    const { min, max } = partOfData.bounds
+    const { min, max } = options.bounds
     const blockSize = [
-      (max[0] - min[0]) / PCD_SPLIT_NUM,
-      (max[1] - min[1]) / PCD_SPLIT_NUM,
-      (max[2] - min[2]) / PCD_SPLIT_NUM,
+      (max.x - min.x) / PCD_SPLIT_NUM,
+      (max.y - min.y) / PCD_SPLIT_NUM,
+      (max.z - min.z) / PCD_SPLIT_NUM,
     ]
 
-    const positions = partOfData.positions
-    for (let i = 0; i < positions.length; i += 3) {
-      const x = positions[i]
-      const y = positions[i + 1]
-      const z = positions[i + 2]
+    const positions = options.positions
 
-      // 计算点所在的 block 索引
-      const blockX = Math.floor((x - min[0]) / blockSize[0])
-      const blockY = Math.floor((y - min[1]) / blockSize[1])
-      const blockZ = Math.floor((z - min[2]) / blockSize[2])
+    positionsToVector3Like(positions, ({ x, y, z }) => {
+      // 利用 相对于点云最小位置的偏移量 来计算该点在哪个位置
+      const blockX = Math.floor((x - min.x) / blockSize[0])
+      const blockY = Math.floor((y - min.y) / blockSize[1])
+      const blockZ = Math.floor((z - min.z) / blockSize[2])
       const blockKey = `${blockX}_${blockY}_${blockZ}`
 
-      // 初始化 block
-      if (!blocks.has(blockKey)) {
-        blocks.set(blockKey, [])
+      if (!blockMap.has(blockKey)) {
+        blockMap.set(blockKey, [])
       }
 
-      // 将点添加到 block
-      const block = blocks.get(blockKey)!
+      const block = blockMap.get(blockKey)!
       block.push(x, y, z)
 
-      blocks.set(blockKey, block)
+      blockMap.set(blockKey, block)
+    })
+
+    console.warn(`Splitted Block Counts: ${blockMap.size}`)
+
+    blocks.value = []
+    for (const [_key, values] of blockMap) {
+      const points = createPoints(new Float32Array(values))
+      const block = new Block(points)
+      _onLoad(block)
+      blocks.value.push(block)
     }
-
-    // console.log(Array.from(blocks.values())[0])
-
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Array.from(blocks.values())[0]), 3))
-
-    const material = new THREE.PointsMaterial({ size: POINT_SIZE, vertexColors: true })
-    const points = new THREE.Points(geometry, material)
-    const obj = {
-      type: partOfData.isFinish ? PCDType.Full : partOfData.type,
-      points,
-      bounds: partOfData.bounds,
-    }
-    onLoad(obj, toRaw(pcdObject.value))
-
-    pcdObject.value = obj
   }
 
-  const loadPCDFile = (pcd: PCDPack) => {
-    if (isPartOfPCD(pcd)) {
-      loadPartOfPCDFile(pcd)
+  const fromLoader = (options: PCDFromLoader) => {
+    const loader = new PCDLoader()
+    const points = loader.parse(options.data)
+
+    const block = new Block(points)
+    _onLoad(block)
+    blocks.value = [block]
+  }
+
+  const loadPCDFile = (pcd: PCDFileData) => {
+    if (isPCDFromStream(pcd)) {
+      fromStream(pcd)
       return
     }
 
-    const points = loader.parse(pcd.data)
-    const obj = { type: PCDType.Full, points }
-    onLoad(obj, toRaw(pcdObject.value))
-
-    pcdObject.value = obj
+    fromLoader(pcd)
   }
 
-  return { pcdObject, loadPCDFile }
+  return { blocks, loadPCDFile }
 }

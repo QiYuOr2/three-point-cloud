@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 import type { PCDHeader } from '../common/file'
-import type { PCDPack } from '../composables/usePCD'
+import type { PCDFileData } from '../composables/usePCD'
 import { useFileDialog } from '@vueuse/core'
 import { ref } from 'vue'
 import { SHOULD_SPLIT_FILE_SIZE, SPLITED_FILE_SIZE } from '../common/constants'
 import { binaryDataHandler, mergeTypeArray, readHeader } from '../common/file'
-import { PCDType } from '../composables/usePCD'
+import { positionsToVector3Like } from '../common/utils'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 
 const emits = defineEmits<{
-  (event: 'upload', file: PCDPack): void
+  (event: 'upload', PCD: PCDFileData): void
   (event: 'addColor'): void
   (event: 'cancel'): void
   (event: 'reset'): void
@@ -55,7 +55,7 @@ function smallFileReader(file: File) {
     if (!e.target?.result) {
       return
     }
-    emits('upload', { type: PCDType.Full, data: e.target.result })
+    emits('upload', { data: e.target.result })
   }
   reader.readAsArrayBuffer(file)
 }
@@ -69,7 +69,9 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
   let headerObject = {} as PCDHeader
   let totalPositions = new Float32Array()
 
-  const edges: Array<[[number, number, number], [number, number, number]]> = []
+  // 计算边界值
+  let [minX, minY, minZ] = [Infinity, Infinity, Infinity]
+  let [maxX, maxY, maxZ] = [-Infinity, -Infinity, -Infinity]
 
   while (true) {
     const { value, done } = await reader.read()
@@ -95,49 +97,26 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
       const { otherData, positions } = binaryDataHandler(data, headerObject)
       // emits('upload', { type: PCDType.Part, positions })
 
-      // 计算边界值
-      let [minX, minY, minZ] = [Infinity, Infinity, Infinity]
-      let [maxX, maxY, maxZ] = [-Infinity, -Infinity, -Infinity]
-
-      for (let i = 0; i < positions.length; i += 3) {
-        const x = positions[i]
-        const y = positions[i + 1]
-        const z = positions[i + 2]
+      positionsToVector3Like(positions, ({ x, y, z }) => {
         minX = Math.min(minX, x)
         minY = Math.min(minY, y)
         minZ = Math.min(minZ, z)
         maxX = Math.max(maxX, x)
         maxY = Math.max(maxY, y)
         maxZ = Math.max(maxZ, z)
-      }
-
-      edges.push([[minX, minY, minZ], [maxX, maxY, maxZ]])
+      })
 
       totalPositions = mergeTypeArray(totalPositions, positions, Float32Array)
       data = otherData
     }
   }
 
-  // 计算最终边界
-  let [finalMinX, finalMinY, finalMinZ] = [Infinity, Infinity, Infinity]
-  let [finalMaxX, finalMaxY, finalMaxZ] = [-Infinity, -Infinity, -Infinity]
-
-  for (const [[minX, minY, minZ], [maxX, maxY, maxZ]] of edges) {
-    finalMinX = Math.min(finalMinX, minX)
-    finalMinY = Math.min(finalMinY, minY)
-    finalMinZ = Math.min(finalMinZ, minZ)
-    finalMaxX = Math.max(finalMaxX, maxX)
-    finalMaxY = Math.max(finalMaxY, maxY)
-    finalMaxZ = Math.max(finalMaxZ, maxZ)
-  }
-
   emits('upload', {
-    type: PCDType.Part,
     positions: totalPositions,
     isFinish: true,
     bounds: {
-      min: [finalMinX, finalMinY, finalMinZ],
-      max: [finalMaxX, finalMaxY, finalMaxZ],
+      min: { x: minX, y: minY, z: minZ },
+      max: { x: maxX, y: maxY, z: maxZ },
     },
   })
 }
@@ -153,12 +132,17 @@ onChange((files) => {
     smallFileReader(file)
     return
   }
+
+  // loader.load / loader.parse 直接加载都会报错 非法数组长度，选择手动读取文件中各点的位置
   bigFileReader(file.stream())
 })
 </script>
 
 <template>
-  <div fixed left-4 bottom-6 flex items-center bg-slate-950 px-6 py-3 rounded-lg shadow-sm shadow-gray-5 border-1 border-solid border-gray-400 text-gray-100 text-sm @click.stop>
+  <div
+    fixed left-4 bottom-6 flex items-center bg-slate-950 px-6 py-3 rounded-lg shadow-sm shadow-gray-5 border-1
+    border-solid border-gray-400 text-gray-100 text-sm @click.stop
+  >
     <div flex items-center>
       <span>按住</span>
       <kbd class="key" :class="[{ 'text-cyan-500 border-cyan-500': isSpacePressed }]">空格</kbd>

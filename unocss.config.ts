@@ -9,7 +9,7 @@ export default defineConfig({
       'divider-v': 'min-h-10px h-full w-px bg-neutral-3 mx-2',
     },
     {
-      button: 'flex items-center cursor-pointer border-gray-300 border-1 border-solid shadow rounded-md px-3 py-1 bg-zinc-900 hover:bg-gray-300 hover:text-zinc-900 transition-colors duration-200',
+      button: 'flex items-center cursor-pointer border-gray-300 border-1 border-solid shadow rounded-md px-3 py-1 bg-zinc-900 hover:bg-gray-300 hover:text-zinc-900 transition-colors duration-200 select-none',
     },
   ],
   presets: [

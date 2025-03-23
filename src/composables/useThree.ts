@@ -45,6 +45,17 @@ export function useThree(options: UseThreeOptions) {
     animations.add(animation)
   }
 
+  const removeSceneChildren = (type: string) => {
+    let i = 0
+    while (scene.children.length > i) {
+      if (scene.children[i].type !== type) {
+        i++
+        continue
+      }
+      scene.remove(scene.children[i])
+    }
+  }
+
   useSafeWindowEventListener('resize', resizeThree)
 
   onMounted(() => {
@@ -61,5 +72,5 @@ export function useThree(options: UseThreeOptions) {
     cancelAnimationFrame(animationRef.value!)
   })
 
-  return { scene, camera, renderer, onAnimate }
+  return { scene, camera, renderer, onAnimate, removeSceneChildren }
 }
