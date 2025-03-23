@@ -1,6 +1,8 @@
 # Three.js 点云图
 
-思路：拍平 3D
+https://molar.yuque.com/oim2it/tydouy/yghb2x?singleDoc=#J2gL1
+
+拍平 3D
 
 1. 绘制闭合的曲线
     - 2D ↔ 3D 坐标转换  投射到 z = 0

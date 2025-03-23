@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PCDFileData } from './composables/usePCD'
 import * as THREE from 'three'
 import { ArcballControls } from 'three/addons/controls/ArcballControls.js'
 import { ref } from 'vue'
@@ -107,6 +108,11 @@ useSafeWindowEventListener('keyup', (event: KeyboardEvent) => {
   }
 })
 
+function upload(file: PCDFileData) {
+  willColoringBlockIndexes.value = []
+  loadPCDFile(file)
+}
+
 function resetCamera() {
   controls.reset()
 }
@@ -114,5 +120,5 @@ function resetCamera() {
 
 <template>
   <div ref="container" w-full h-screen />
-  <Tools :block-step="blockStep" @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
+  <Tools :block-step="blockStep" @add-color="addColor" @upload="upload" @cancel="cancel" @reset="resetCamera" />
 </template>

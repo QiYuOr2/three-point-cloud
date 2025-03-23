@@ -3,7 +3,7 @@ import { SPLITED_FILE_SIZE } from '../common/constants'
 import { binaryDataHandler, mergeTypeArray, readHeader } from '../common/file'
 import { positionsToVector3Like } from '../common/utils'
 
-globalThis.onmessage = async (event) => {
+globalThis.onmessage = async (event: MessageEvent<{ fileStream: ReadableStream }>) => {
   const { fileStream } = event.data
   const reader = fileStream.getReader()
 
@@ -37,6 +37,7 @@ globalThis.onmessage = async (event) => {
     data = mergeTypeArray(data, value, Uint8Array)
 
     if (data.byteLength >= SPLITED_FILE_SIZE || value.byteLength < SPLITED_FILE_SIZE) {
+      // 另外两种数据类型的 PCD 文件没有处理
       const { otherData, positions } = binaryDataHandler(data, headerObject)
 
       positionsToVector3Like(positions, ({ x, y, z }) => {

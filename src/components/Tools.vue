@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
+import type { Bounds } from '../common/polygon'
 import type { PCDFileData } from '../composables/usePCD'
 import { useFileDialog, useWebWorker } from '@vueuse/core'
 import { onUnmounted, ref } from 'vue'
@@ -68,7 +69,7 @@ const { worker } = useWebWorker(() => new Worker(
   { type: 'module' },
 ))
 
-function onMessage(event: MessageEvent) {
+function onMessage(event: MessageEvent<{ positions: Float32Array, bounds: Bounds, step: [number, number] }>) {
   const { positions, bounds, step } = event.data
   if (positions) {
     emits('upload', {
@@ -159,7 +160,7 @@ function percent(current: number, total: number) {
     <template v-if="blockStep?.[1]">
       <div class="divider-v mx-3" />
       <div>
-        {{ `计算分区： ${blockStep[0] === 0 ? '计算中' : percent(...blockStep) }` }}
+        {{ `计算分区： ${blockStep[0] === 0 ? '计算中' : percent(...blockStep)}` }}
       </div>
     </template>
   </div>

@@ -109,7 +109,7 @@ export function usePCD({ filePath, onLoad }: UsePCDOptions) {
     { type: 'module' },
   ))
 
-  const onMessage = (event: MessageEvent) => {
+  const onMessage = (event: MessageEvent<{ blockValues?: number[], step?: [number, number] }>) => {
     const { blockValues, step } = event.data
 
     if (step) {
