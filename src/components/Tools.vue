@@ -7,7 +7,7 @@ import { SHOULD_SPLIT_FILE_SIZE } from '../common/constants'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 
 defineProps<{
-  blockCount: number
+  blockStep: [number, number]
 }>()
 
 const emits = defineEmits<{
@@ -86,6 +86,7 @@ async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
   if (!worker.value) {
     return
   }
+
   worker.value.postMessage({ fileStream }, [fileStream])
 
   worker.value.addEventListener('message', onMessage)
@@ -106,6 +107,10 @@ onChange((files) => {
   // loader.load / loader.parse 直接加载都会报错 非法数组长度，选择手动读取文件中各点的位置
   bigFileReader(file.stream())
 })
+
+function percent(current: number, total: number) {
+  return `${Math.round(current / total * 10000) / 100}%`
+}
 </script>
 
 <template>
@@ -148,12 +153,14 @@ onChange((files) => {
     <template v-if="loadingStep[0]">
       <div class="divider-v mx-3" />
       <div>
-        {{ `${Math.round(loadingStep[0] / loadingStep[1] * 10000) / 100}%` }}
+        {{ `加载文件：${percent(...loadingStep)}` }}
       </div>
-      <template v-if="loadingStep[0] === loadingStep[1]">
-        <div class="divider-v mx-3" />
-        <div>分区数：{{ blockCount || '计算中' }}</div>
-      </template>
+    </template>
+    <template v-if="blockStep?.[1]">
+      <div class="divider-v mx-3" />
+      <div>
+        {{ `计算分区： ${blockStep[0] === 0 ? '计算中' : percent(...blockStep) }` }}
+      </div>
     </template>
   </div>
 </template>

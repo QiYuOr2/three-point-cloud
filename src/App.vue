@@ -17,18 +17,26 @@ const { scene, camera, renderer, removeSceneChildren } = useThree({ container, s
 const controls = new ArcballControls(camera, renderer.domElement)
 controls.enabled = false
 
-const { blocks, loadPCDFile } = usePCD({ onLoad: (block) => {
-  if (blocks.value.length === 1) {
-    // 移除上一个
-    removeSceneChildren('Points')
-  }
+const blockStep = ref<[number, number]>([0, 0])
+const { blocks, loadPCDFile } = usePCD({
+  onLoad: (block, step) => {
+    if (block) {
+      if (blocks.value.length === 1) {
+      // 移除上一个
+        removeSceneChildren('Points')
+      }
 
-  scene.add(block.points)
+      scene.add(block.points)
 
-  // 使用requestAnimationFrame确保渲染
-  controls.update()
-  controls.saveState()
-} })
+      controls.update()
+      controls.saveState()
+    }
+
+    if (step) {
+      blockStep.value = step
+    }
+  },
+})
 
 const { loassoPoints, willColoringBlockIndexes, drawLasso, computePointsInLasso, cancel, addColor, clearSelectedPoints } = useLoasso({ scene, blocks })
 const isCtrlPressed = ref(false)
@@ -78,6 +86,8 @@ usePointer({
       })
 
       computePointsInLasso(polygon.tuple, pointIndexes)
+
+      // 清空套索提示线
       drawLasso(true)
     }
   },
@@ -104,5 +114,5 @@ function resetCamera() {
 
 <template>
   <div ref="container" w-full h-screen />
-  <Tools :block-count="blocks.length" @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
+  <Tools :block-step="blockStep" @add-color="addColor" @upload="loadPCDFile" @cancel="cancel" @reset="resetCamera" />
 </template>

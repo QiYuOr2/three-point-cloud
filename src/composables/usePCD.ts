@@ -2,10 +2,11 @@ import type * as THREE from 'three'
 import type { MaybeRef } from 'vue'
 import type { Bounds } from '../common/polygon'
 import type { PCDPoints, RGBArray } from '../common/utils'
+import { useWebWorker } from '@vueuse/core'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
 import { ref, toRaw, unref, watch } from 'vue'
-import { COLOR, PCD_SPLIT_NUM } from '../common/constants'
-import { addVertexColor, createPoints, getVector3sBounds, positionsToVector3, positionsToVector3Like, setColor } from '../common/utils'
+import { COLOR } from '../common/constants'
+import { addVertexColor, createPoints, getVector3sBounds, positionsToVector3, setColor } from '../common/utils'
 
 interface PCDFromStream {
   positions: Float32Array
@@ -86,14 +87,14 @@ export class Block {
 
 interface UsePCDOptions {
   filePath?: MaybeRef<string>
-  onLoad: (block: Block) => void
+  onLoad: (block?: Block, step?: [number, number]) => void
 }
 
 export function usePCD({ filePath, onLoad }: UsePCDOptions) {
   const loader = new PCDLoader()
   const blocks = ref<Block[]>([])
 
-  const _onLoad = (value: Block) => onLoad(toRaw(value))
+  const _onLoad = (value?: Block, step?: [number, number]) => onLoad(toRaw(value), step)
 
   if (filePath) {
     watch(() => unref(filePath), async (value) => {
@@ -103,44 +104,36 @@ export function usePCD({ filePath, onLoad }: UsePCDOptions) {
     }, { immediate: true })
   }
 
-  const fromStream = (options: PCDFromStream) => {
-    const blockMap = new Map<string, Array<number>>()
+  const { worker } = useWebWorker(() => new Worker(
+    new URL('../workers/splitToBlocks.worker.ts', import.meta.url),
+    { type: 'module' },
+  ))
 
-    const { min, max } = options.bounds
-    const blockSize = [
-      (max.x - min.x) / PCD_SPLIT_NUM,
-      (max.y - min.y) / PCD_SPLIT_NUM,
-      (max.z - min.z) / PCD_SPLIT_NUM,
-    ]
+  const onMessage = (event: MessageEvent) => {
+    const { blockValues, step } = event.data
 
-    const positions = options.positions
+    if (step) {
+      _onLoad(undefined, step)
+    }
 
-    positionsToVector3Like(positions, ({ x, y, z }) => {
-      // 利用 相对于点云最小位置的偏移量 来计算该点在哪个位置
-      const blockX = Math.floor((x - min.x) / blockSize[0])
-      const blockY = Math.floor((y - min.y) / blockSize[1])
-      const blockZ = Math.floor((z - min.z) / blockSize[2])
-      const blockKey = `${blockX}_${blockY}_${blockZ}`
-
-      if (!blockMap.has(blockKey)) {
-        blockMap.set(blockKey, [])
-      }
-
-      const block = blockMap.get(blockKey)!
-      block.push(x, y, z)
-
-      blockMap.set(blockKey, block)
-    })
-
-    console.warn(`Splitted Block Counts: ${blockMap.size}`)
-
-    blocks.value = []
-    for (const [_key, values] of blockMap) {
-      const points = createPoints(new Float32Array(values))
+    if (blockValues) {
+      const points = createPoints(new Float32Array(blockValues))
       const block = new Block(points)
+
       _onLoad(block)
       blocks.value.push(block)
     }
+  }
+
+  const fromStream = (options: PCDFromStream) => {
+    const { min, max } = options.bounds
+
+    const positions = options.positions
+
+    worker.value?.postMessage({ positions, min, max })
+
+    blocks.value = []
+    worker.value?.addEventListener('message', onMessage)
   }
 
   const fromLoader = (options: PCDFromLoader) => {
