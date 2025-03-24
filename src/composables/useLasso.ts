@@ -1,68 +1,133 @@
 import type { Ref } from 'vue'
 import type { Block } from './usePCD'
-import { polygonContains } from 'd3-polygon'
 import * as THREE from 'three'
-import { ref } from 'vue'
+import { ref, toRaw, watchEffect } from 'vue'
 import { COLOR } from '../common/constants'
+import { checkPolygonRelation, isContainsPolygon, polygonContains, PolygonRelation } from '../common/polygon'
+import { positionsToVector3Like, toScreenPosition } from '../common/utils'
+import { useWebWorker } from '@vueuse/core'
 
-interface UseLoassoOptions {
+interface UseLassoOptions {
+  camera: THREE.Camera
+  renderer: THREE.WebGLRenderer
   scene: THREE.Scene
   blocks: Ref<Block[]>
 }
 
-export function useLoasso({ scene, blocks }: UseLoassoOptions) {
+export function useLasso({ blocks, camera }: UseLassoOptions) {
   const willColoringBlockIndexes = ref<number[]>([])
 
-  const geometry = new THREE.BufferGeometry()
-  const material = new THREE.LineBasicMaterial({ color: 0xFF0000 })
-  const line = new THREE.Line(geometry, material)
-  scene.add(line)
+  const lassoPoints = ref<Array<THREE.Vector3>>([])
+  const screenLassoPoints = ref<Array<THREE.Vector2Like>>([])
 
-  const loassoPoints = ref<Array<THREE.Vector3>>([])
+  let geometry: THREE.BufferGeometry<THREE.NormalBufferAttributes>
+  let lassoLine: THREE.Line<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.LineBasicMaterial, THREE.Object3DEventMap>
 
-  function drawLasso(clear = false) {
-    if (clear) {
-      loassoPoints.value = []
+  function setupLasso(scene: THREE.Scene) {
+    geometry = new THREE.BufferGeometry()
+    const material = new THREE.LineBasicMaterial({ color: 0xFF0000 })
+    lassoLine = new THREE.Line(geometry, material)
+    scene.add(lassoLine)
+  }
+
+  function updateLasso(options: { point?: THREE.Vector3, pointNDC?: THREE.Vector2Like, clear?: boolean }) {
+    if (options.clear) {
+      lassoPoints.value = []
+      lassoLine.visible = false
+      screenLassoPoints.value = []
     }
 
-    const positions = new Float32Array(loassoPoints.value.flatMap(p => [p.x, p.y, p.z]))
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    options.pointNDC && screenLassoPoints.value.push(options.pointNDC)
+    options.point && lassoPoints.value.push(options.point)
+
+    if (lassoPoints.value.length < 2) {
+      return
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      ...lassoPoints.value,
+      lassoPoints.value[0],
+    ])
+    lassoLine.visible = true
+    lassoLine.geometry.dispose()
+    lassoLine.geometry = geometry
   }
+
+  const { data, post } = useWebWorker<{ blockIndex: number; visibleIndexes: number[]; hiddenIndexes: number[] }>(() => new Worker(
+    new URL('../workers/lassoSelection.worker.ts', import.meta.url),
+    { type: 'module' },
+  ))
+
+  watchEffect(() => {
+    const { blockIndex, visibleIndexes, hiddenIndexes } = data.value ?? {}
+    if (blockIndex === undefined) {
+      return
+    }
+
+    const block = blocks.value[blockIndex]
+    const colors = block.points.geometry.attributes.color.array
+    visibleIndexes.forEach((index) => {
+      colors[index * 4 + 3] = 1
+      block.willColoringPointIndexes.push(index)
+    })
+
+    hiddenIndexes.forEach((index) => {
+      colors[index * 4 + 3] = 0
+    })
+
+    block.points.geometry.attributes.color.needsUpdate = true
+  })
 
   /**
    * 计算哪些点在套索内
    */
-  function computePointsInLasso(lasso: [number, number][], needComputeblockIndexes: number[]) {
-    const start = window.performance.now()
-    if (!needComputeblockIndexes.length || !lasso.length) {
+  function computePointsInLasso(blocks: Block[]) {
+    if (lassoPoints.value.length < 3 || !blocks.length) {
       return
     }
 
-    willColoringBlockIndexes.value.push(...needComputeblockIndexes)
+    const start = window.performance.now()
 
-    blocks.value.forEach(block => block.saveState())
+    const blockIndexes: number[] = []
 
-    needComputeblockIndexes.forEach((index) => {
-      const block = blocks.value[index]
-      const positions = block.points.geometry.attributes.position.array
-
-      const colors = block.points.geometry.attributes.color.array
-
-      for (let posIndex = 0; posIndex < positions.length; posIndex += 3) {
-        const x = positions[posIndex]
-        const y = positions[posIndex + 1]
-        const pointIndex = posIndex / 3
-        const colorIndex = pointIndex * 4
-
-        if (polygonContains(lasso, [x, y])) {
-          block.addWillColoringPoint(pointIndex)
-          colors[colorIndex + 3] = 1
-          continue
+    blocks.forEach((block, i) => {
+      block.saveState()
+      const rect = block.toNDC(camera)
+      if (checkPolygonRelation(rect, screenLassoPoints.value) === PolygonRelation.IntersectingOrContains) {
+        willColoringBlockIndexes.value.push(i)
+        // 两个多边形有相交
+        if (isContainsPolygon(screenLassoPoints.value, rect)) {
+          // 套索完全包含了该区域
+          block.shouldBlockColoring = true
+          return
         }
-        colors[colorIndex + 3] = 0
+        // 部分相交需要进一步检查点
+        blockIndexes.push(i)
+        return
+      }
+      block.setVisible(false)
+    })
+
+    blockIndexes.forEach((index) => {
+      const block = blocks[index]
+
+      if (block.shouldBlockColoring) {
+        return
       }
 
-      block.points.geometry.attributes.color.needsUpdate = true
+      const positions = block.points.geometry.attributes.position.array
+      const colors = block.points.geometry.attributes.color.array
+      
+      post({
+        blockIndex: index,
+        positions,
+        colors,
+        screenLassoPoints: toRaw(screenLassoPoints.value),
+        camera: {
+          projectionMatrix: Array.from(camera.projectionMatrix.elements),
+          matrixWorldInverse: Array.from(camera.matrixWorldInverse.elements)
+        }
+      })
     })
 
     console.warn(`[computePointsInLasso] ${window.performance.now() - start} ms`)
@@ -81,12 +146,15 @@ export function useLoasso({ scene, blocks }: UseLoassoOptions) {
 
   function clearSelectedPoints() {
     willColoringBlockIndexes.value.forEach((index) => {
-      blocks.value[index].clearWillColoringPoint()
+      const block = blocks.value[index]
+      block.clearWillColoringPoint()
+      block.setVisible(true)
     })
     willColoringBlockIndexes.value = []
   }
 
   function cancel() {
+    clearSelectedPoints()
     blocks.value.forEach((block) => {
       block.setVisible(true)
       block.reset('color')
@@ -94,10 +162,10 @@ export function useLoasso({ scene, blocks }: UseLoassoOptions) {
   }
 
   return {
-    loassoPoints,
     willColoringBlockIndexes,
     computePointsInLasso,
-    drawLasso,
+    setupLasso,
+    updateLasso,
     addColor,
     cancel,
     clearSelectedPoints,

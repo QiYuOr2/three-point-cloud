@@ -2,7 +2,7 @@ import type { Vector3 } from 'three'
 import { PCD_SPLIT_NUM } from '../common/constants'
 import { positionsToVector3Like } from '../common/utils'
 
-globalThis.onmessage = async (event: MessageEvent<{ positions: Float32Array, min: Vector3, max: Vector3 }>) => {
+globalThis.onmessage = (event: MessageEvent<{ positions: Float32Array, min: Vector3, max: Vector3 }>) => {
   const { positions, min, max } = event.data
 
   const blockMap = new Map()

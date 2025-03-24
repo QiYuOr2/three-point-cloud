@@ -1,11 +1,10 @@
-import type { Vector2Like, Vector3Like } from 'three'
-import { polygonContains, polygonHull } from 'd3-polygon'
-import { Vector3 } from 'three'
+import type * as THREE from 'three'
+import { polygonContains as polygonContains2D } from 'd3-polygon'
 import { vectorToTuple } from './utils'
 
 export interface Bounds {
-  min: Vector3Like
-  max: Vector3Like
+  min: THREE.Vector3Like
+  max: THREE.Vector3Like
 }
 
 export enum PolygonRelation {
@@ -19,39 +18,24 @@ export enum PolygonRelation {
   Separated,
 }
 
-export function computePolygonPoints(points: Vector3[]) {
-  const computedPoints = polygonHull(points.map(point => [point.x, point.y]))
-
-  if (!computedPoints) {
-    return { points: [], tuple: [] }
-  }
-
-  computedPoints.push(computedPoints[0])
-
-  return { points: computedPoints.map(([x, y]) => new Vector3(x, y, 0)), tuple: computedPoints }
-}
-
 /**
  * 有任意一点在多边形中
  */
-function anyPointInPolygon(points: Vector2Like[], polygon: Vector2Like[]) {
-  const convertedPolygon = polygon.map(vectorToTuple)
-
-  return points.some(point => polygonContains(convertedPolygon, vectorToTuple(point)))
+function anyPointInPolygon(points: THREE.Vector2Like[], polygon: THREE.Vector2Like[]) {
+  return points.some(point => polygonContains(polygon, point))
 }
 
 /**
  * polygon 的所有点都在 wrapper 中
  */
-export function isContainsPolygon(wrapper: Vector2Like[], polygon: Vector2Like[]) {
-  const convertedWrapper = wrapper.map(vectorToTuple)
-  return polygon.every(point => polygonContains(convertedWrapper, vectorToTuple(point)))
+export function isContainsPolygon(wrapper: THREE.Vector2Like[], polygon: THREE.Vector2Like[]) {
+  return polygon.every(point => polygonContains(wrapper, point))
 }
 
 /**
- * 判断同一平面上两个多边形的关系
+ * 判断两个多边形的关系
  */
-export function checkPolygonRelation(polygonA: Vector2Like[], polygonB: Vector2Like[]) {
+export function checkPolygonRelation(polygonA: THREE.Vector2Like[], polygonB: THREE.Vector2Like[]) {
   if (!polygonA.length || !polygonB.length) {
     return PolygonRelation.Separated
   }
@@ -61,14 +45,28 @@ export function checkPolygonRelation(polygonA: Vector2Like[], polygonB: Vector2L
   return PolygonRelation.Separated
 }
 
-/**
- * 将 3D 空间内表示长方体的两个点转为 2D 平面的矩形
- */
-export function vector3boundsToRectVertices({ min, max }: Bounds) {
-  return polygonHull([
-    [min.x, min.y],
-    [max.x, min.y],
-    [min.x, max.y],
-    [max.x, max.y],
-  ])!.map(([x, y]) => ({ x, y }))
+export function vector3boundsToVertices({ min, max }: Bounds): THREE.Vector3Like[] {
+  return [
+    { x: min.x, y: min.y, z: min.z },
+    { x: min.x, y: min.y, z: max.z },
+    { x: min.x, y: max.y, z: min.z },
+    { x: min.x, y: max.y, z: max.z },
+    { x: max.x, y: min.y, z: min.z },
+    { x: max.x, y: min.y, z: max.z },
+    { x: max.x, y: max.y, z: min.z },
+    { x: max.x, y: max.y, z: max.z },
+  ]
+}
+
+export function polygonContains(polygon: THREE.Vector2Like[], point: THREE.Vector2Like) {
+  if (polygon.length < 3) {
+    return false
+  }
+
+  const polygon2D: Array<[number, number]> = polygon.map((point) => {
+    return [point.x, point.y]
+  })
+  const point2D: [number, number] = vectorToTuple(point)
+
+  return polygonContains2D(polygon2D, point2D)
 }

@@ -11,23 +11,23 @@ export function createPoints(positions: Float32Array) {
   return points
 }
 
-export function toNDCPosition(event: MouseEvent | PointerEvent) {
+export function toNDCPosition(point: THREE.Vector2Like) {
   return {
-    x: (event.clientX / window.innerWidth) * 2 - 1,
-    y: -(event.clientY / window.innerHeight) * 2 + 1,
+    x: (point.x / window.innerWidth) * 2 - 1,
+    y: -(point.y / window.innerHeight) * 2 + 1,
   }
 }
 
-export function toZPosition(camera: THREE.Camera, point: THREE.Vector2Like) {
-  // NDC坐标 -> 3D 空间坐标  camera 视线方向上的一点
-  const vector = new THREE.Vector3(point.x, point.y, 0).unproject(camera)
-  // camera 指向 改点 的单位向量
-  const direction = vector.sub(camera.position).normalize()
-  // 投射在 z = 0 上的点
-  const distance = -camera.position.z / direction.z
-  const position = camera.position.clone().add(direction.multiplyScalar(distance))
+export function to3DPosition(point: THREE.Vector2Like, camera: THREE.Camera) {
+  // NDC坐标 -> 3D 世界坐标
+  const vector = new THREE.Vector3(point.x, point.y, 0.5).unproject(camera)
+  return vector
+}
 
-  return position
+export function toScreenPosition(point: THREE.Vector3Like, camera: THREE.Camera) {
+  const vector = new THREE.Vector3(point.x, point.y, point.z)
+  vector.project(camera)
+  return { x: vector.x, y: vector.y }
 }
 
 export type RGBArray = [number, number, number]
@@ -54,7 +54,8 @@ export function createHintBox(min: THREE.Vector3Like, max: THREE.Vector3Like) {
   return line
 }
 
-export function positionsToVector3Like<T extends THREE.TypedArray>(positions: T, onLoop?: (point: THREE.Vector3Like) => void): THREE.Vector3Like[] {
+type PositionLoop<T> = (point: T, pointIndex: number) => void
+export function positionsToVector3Like<T extends THREE.TypedArray>(positions: T, onLoop?: PositionLoop<THREE.Vector3Like>): THREE.Vector3Like[] {
   const points = []
   for (let i = 0; i < positions.length / 3; i++) {
     const point = {
@@ -63,12 +64,12 @@ export function positionsToVector3Like<T extends THREE.TypedArray>(positions: T,
       z: positions[i * 3 + 2],
     }
     points.push(point)
-    onLoop?.(point)
+    onLoop?.(point, i)
   }
   return points
 }
 
-export function positionsToVector3<T extends THREE.TypedArray>(positions: T, onLoop?: (point: THREE.Vector3) => void) {
+export function positionsToVector3<T extends THREE.TypedArray>(positions: T, onLoop?: PositionLoop<THREE.Vector3>) {
   const points = []
   for (let i = 0; i < positions.length / 3; i++) {
     const point = new THREE.Vector3(
@@ -77,12 +78,21 @@ export function positionsToVector3<T extends THREE.TypedArray>(positions: T, onL
       positions[i * 3 + 2],
     )
     points.push(point)
-    onLoop?.(point)
+    onLoop?.(point, i)
   }
   return points
 }
 
-export function vectorToTuple(vector: THREE.Vector2Like): [number, number] {
+function isVector3Like(vector: unknown): vector is THREE.Vector3Like {
+  return (vector as THREE.Vector3Like).z !== undefined
+}
+
+export function vectorToTuple(vector: THREE.Vector2Like): [number, number]
+export function vectorToTuple(vector: THREE.Vector3Like): [number, number, number]
+export function vectorToTuple<T extends THREE.Vector2Like | THREE.Vector3Like>(vector: T) {
+  if (isVector3Like(vector)) {
+    return [vector.x, vector.y, vector.z]
+  }
   return [vector.x, vector.y]
 }
 

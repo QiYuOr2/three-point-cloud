@@ -4,9 +4,10 @@ import type { Bounds } from '../common/polygon'
 import type { PCDPoints, RGBArray } from '../common/utils'
 import { useWebWorker } from '@vueuse/core'
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js'
-import { ref, toRaw, unref, watch } from 'vue'
+import { ref, toRaw, unref, watch, watchEffect } from 'vue'
 import { COLOR } from '../common/constants'
-import { addVertexColor, createPoints, getVector3sBounds, positionsToVector3, setColor } from '../common/utils'
+import { vector3boundsToVertices } from '../common/polygon'
+import { addVertexColor, createPoints, getVector3sBounds, positionsToVector3, setColor, toScreenPosition } from '../common/utils'
 
 interface PCDFromStream {
   positions: Float32Array
@@ -65,7 +66,7 @@ export class Block {
   }
 
   setVisible(value: boolean) {
-    this.points.material.opacity = value ? 1 : 0
+    this.points.visible = value
   }
 
   setColor([r, g, b]: RGBArray) {
@@ -82,6 +83,10 @@ export class Block {
     })
     this.points.geometry.attributes.color.needsUpdate = true
     this.shouldBlockColoring = false
+  }
+
+  toNDC(camera: THREE.Camera) {
+    return vector3boundsToVertices(this.bounds).map(point => toScreenPosition(point, camera))
   }
 }
 
@@ -104,13 +109,13 @@ export function usePCD({ filePath, onLoad }: UsePCDOptions) {
     }, { immediate: true })
   }
 
-  const { worker } = useWebWorker(() => new Worker(
+  const { data, post } = useWebWorker<{ blockValues?: number[], step?: [number, number] }>(() => new Worker(
     new URL('../workers/splitToBlocks.worker.ts', import.meta.url),
     { type: 'module' },
   ))
 
-  const onMessage = (event: MessageEvent<{ blockValues?: number[], step?: [number, number] }>) => {
-    const { blockValues, step } = event.data
+  watchEffect(() => {
+    const { blockValues, step } = data.value ?? {}
 
     if (step) {
       _onLoad(undefined, step)
@@ -123,17 +128,16 @@ export function usePCD({ filePath, onLoad }: UsePCDOptions) {
       _onLoad(block)
       blocks.value.push(block)
     }
-  }
+  })
 
   const fromStream = (options: PCDFromStream) => {
     const { min, max } = options.bounds
 
     const positions = options.positions
 
-    worker.value?.postMessage({ positions, min, max })
+    post({ positions, min, max })
 
     blocks.value = []
-    worker.value?.addEventListener('message', onMessage)
   }
 
   const fromLoader = (options: PCDFromLoader) => {

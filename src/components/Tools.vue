@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import type { Bounds } from '../common/polygon'
 import type { PCDFileData } from '../composables/usePCD'
 import { useFileDialog, useWebWorker } from '@vueuse/core'
-import { onUnmounted, ref } from 'vue'
+import { onUnmounted, ref, toRaw, watchEffect } from 'vue'
 import { SHOULD_SPLIT_FILE_SIZE } from '../common/constants'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 
@@ -64,33 +64,26 @@ function smallFileReader(file: File) {
 
 const loadingStep = ref<[number, number]>([0, 0])
 
-const { worker } = useWebWorker(() => new Worker(
+const { data, post } = useWebWorker<{ positions: Float32Array, bounds: Bounds, step: [number, number] }>(() => new Worker(
   new URL('../workers/fileReader.worker.ts', import.meta.url),
   { type: 'module' },
 ))
 
-function onMessage(event: MessageEvent<{ positions: Float32Array, bounds: Bounds, step: [number, number] }>) {
-  const { positions, bounds, step } = event.data
+watchEffect(() => {
+  const { positions, bounds, step } = data.value ?? {}
   if (positions) {
     emits('upload', {
       positions,
       isFinish: true,
-      bounds,
+      bounds: toRaw(bounds),
     })
   }
-  loadingStep.value = step
-}
-
-onUnmounted(() => worker.value?.removeEventListener('message', onMessage))
+  step && (loadingStep.value = step)
+})
 
 async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
-  if (!worker.value) {
-    return
-  }
 
-  worker.value.postMessage({ fileStream }, [fileStream])
-
-  worker.value.addEventListener('message', onMessage)
+  post({ fileStream }, [fileStream])
 }
 
 onChange((files) => {

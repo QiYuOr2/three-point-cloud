@@ -16,12 +16,6 @@ interface UsePointerOptions {
    */
   onTrigger: (event: PointerEvent, point: Point, isPressed: boolean) => void
   /**
-   * 自定义指针位置转换函数
-   * @param event - PointerEvent 事件对象
-   * @returns 转换后的坐标点
-   */
-  pointerPositionTransfer?: (event: PointerEvent) => Point
-  /**
    * 当指针按下状态改变时触发的回调函数
    * @param isPointerPressed - 当前指针是否处于按下状态
    */
@@ -33,12 +27,10 @@ interface UsePointerOptions {
   checkPressed?: boolean
 }
 
-export function usePointer({ element, onTrigger, pointerPositionTransfer, onPressedChange, checkPressed }: UsePointerOptions) {
+export function usePointer({ element, onTrigger, onPressedChange, checkPressed }: UsePointerOptions) {
   const isPressed = ref(false)
   const x = ref(0)
   const y = ref(0)
-
-  const transfer = pointerPositionTransfer ?? ((event: PointerEvent) => ({ x: event.clientX, y: event.clientY }))
 
   const onPointerDown = () => {
     isPressed.value = true
@@ -51,11 +43,10 @@ export function usePointer({ element, onTrigger, pointerPositionTransfer, onPres
       return
     }
 
-    const point = transfer(event)
-    x.value = point.x
-    y.value = point.y
+    x.value = event.clientX
+    y.value = event.clientY
 
-    onTrigger(event, point, isPressed.value)
+    onTrigger(event, { x: x.value, y: y.value }, isPressed.value)
   }
 
   watch(isPressed, value => onPressedChange?.(value))
