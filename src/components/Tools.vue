@@ -82,7 +82,6 @@ watchEffect(() => {
 })
 
 async function bigFileReader(fileStream: ReadableStream<Uint8Array>) {
-
   post({ fileStream }, [fileStream])
 }
 

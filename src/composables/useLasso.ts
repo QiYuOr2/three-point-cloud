@@ -1,10 +1,10 @@
 import type { Ref } from 'vue'
 import type { Block } from './usePCD'
+import { useWebWorker } from '@vueuse/core'
 import * as THREE from 'three'
 import { ref, toRaw, watchEffect } from 'vue'
 import { COLOR } from '../common/constants'
 import { checkPolygonRelation, isContainsPolygon, PolygonRelation } from '../common/polygon'
-import { useWebWorker } from '@vueuse/core'
 
 interface UseLassoOptions {
   camera: THREE.Camera
@@ -13,10 +13,10 @@ interface UseLassoOptions {
   blocks: Ref<Block[]>
 }
 
-interface OnMessageReturn { 
-  blockIndex: number; 
-  visibleIndexes: number[]; 
-  hiddenIndexes: number[] 
+interface OnMessageReturn {
+  blockIndex: number
+  visibleIndexes: number[]
+  hiddenIndexes: number[]
 }
 
 export function useLasso({ blocks, camera }: UseLassoOptions) {
@@ -58,104 +58,89 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
     lassoLine.geometry = geometry
   }
 
-  const { data, post } = useWebWorker<OnMessageReturn>(() => new Worker(
+  const { data: selectionData, post: selectionPost } = useWebWorker<OnMessageReturn>(() => new Worker(
     new URL('../workers/lassoSelection.worker.ts', import.meta.url),
     { type: 'module' },
   ))
 
   let checkPointBlockCount = 0
-  let onWorkerMessageCount = 0
+  let onSelectionWorkerMessageCount = 0
   let willRenderIndex: OnMessageReturn[] = []
   let willHideBlockIndexes: number[] = []
   watchEffect(() => {
-    if (data.value?.blockIndex === undefined || checkPointBlockCount === 0) {
+    if (selectionData.value?.blockIndex === undefined || checkPointBlockCount === 0) {
       return
     }
 
-    willRenderIndex.push(data.value)
+    willRenderIndex.push(selectionData.value)
 
-    onWorkerMessageCount += 1
-    
-    if (checkPointBlockCount === onWorkerMessageCount) {
+    onSelectionWorkerMessageCount += 1
+
+    if (checkPointBlockCount === onSelectionWorkerMessageCount) {
       willHideBlockIndexes.forEach(index => blocks.value[index].setVisible(false))
-      willRenderIndex.forEach(({blockIndex, visibleIndexes, hiddenIndexes}) => {
+      willRenderIndex.forEach(({ blockIndex, visibleIndexes, hiddenIndexes }) => {
+        const block = blocks.value[blockIndex]
+        const colors = block.points.geometry.attributes.color.array
+        visibleIndexes.forEach((index) => {
+          colors[index * 4 + 3] = 1
+          block.willColoringPointIndexes.push(index)
+        })
 
-      const block = blocks.value[blockIndex]
-      const colors = block.points.geometry.attributes.color.array
-      visibleIndexes.forEach((index) => {
-        colors[index * 4 + 3] = 1
-        block.willColoringPointIndexes.push(index)
+        hiddenIndexes.forEach((index) => {
+          colors[index * 4 + 3] = 0
+        })
+
+        block.points.geometry.attributes.color.needsUpdate = true
       })
-
-      hiddenIndexes.forEach((index) => {
-        colors[index * 4 + 3] = 0
-      })
-
-      block.points.geometry.attributes.color.needsUpdate = true
-    })
-  }
-
+    }
   })
 
   /**
    * 计算哪些点在套索内
    */
-  function computePointsInLasso(blocks: Block[]) {
-    if (lassoPoints.value.length < 3 || !blocks.length) {
+  function computePointsInLasso() {
+    if (lassoPoints.value.length < 3 || !blocks.value.length) {
       return
     }
 
     checkPointBlockCount = 0
-    onWorkerMessageCount = 0
+    onSelectionWorkerMessageCount = 0
     willRenderIndex = []
     willHideBlockIndexes = []
+    willColoringBlockIndexes.value = []
 
-    const blockIndexes: number[] = []
-
-    blocks.forEach((block, i) => {
+    blocks.value.forEach((block, i) => {
       block.saveState()
 
-      if (!block.points.userData['visible']) {
+      if (!block.points.userData.visible) {
         block.setVisible(false)
         return
       }
 
       const rect = block.toNDC(camera)
-      if (checkPolygonRelation(rect, screenLassoPoints.value) === PolygonRelation.IntersectingOrContains) {
+      const relation = checkPolygonRelation(rect, screenLassoPoints.value)
+      
+      if (relation === PolygonRelation.IntersectingOrContains) {
         willColoringBlockIndexes.value.push(i)
-        // 两个多边形有相交
         if (isContainsPolygon(screenLassoPoints.value, rect)) {
-          // 套索完全包含了该区域
           block.shouldBlockColoring = true
           return
         }
-        blockIndexes.push(i)
-        return
+
+        selectionPost({
+          blockIndex: i,
+          positions: block.points.geometry.attributes.position.array,
+          colors: block.points.geometry.attributes.color.array,
+          screenLassoPoints: toRaw(screenLassoPoints.value),
+          camera: {
+            projectionMatrix: Array.from(camera.projectionMatrix.elements),
+            matrixWorldInverse: Array.from(camera.matrixWorldInverse.elements),
+          },
+        })
+        checkPointBlockCount += 1
+      } else {
+        willHideBlockIndexes.push(i)
       }
-      willHideBlockIndexes.push(i)
-    })
-
-    blockIndexes.forEach((index) => {
-      const block = blocks[index]
-
-      if (block.shouldBlockColoring) {
-        return
-      }
-
-      const positions = block.points.geometry.attributes.position.array
-      const colors = block.points.geometry.attributes.color.array
-      
-      post({
-        blockIndex: index,
-        positions,
-        colors,
-        screenLassoPoints: toRaw(screenLassoPoints.value),
-        camera: {
-          projectionMatrix: Array.from(camera.projectionMatrix.elements),
-          matrixWorldInverse: Array.from(camera.matrixWorldInverse.elements)
-        }
-      })
-      checkPointBlockCount += 1
     })
   }
 

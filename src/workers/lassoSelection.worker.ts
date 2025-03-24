@@ -15,13 +15,13 @@ interface OnMessageData {
 
 globalThis.onmessage = async (event: MessageEvent<OnMessageData>) => {
   const { blockIndex, positions, camera: cameraData, screenLassoPoints } = event.data
-  
+
   const camera = new THREE.PerspectiveCamera()
   camera.projectionMatrix.fromArray(cameraData.projectionMatrix)
   camera.matrixWorldInverse.fromArray(cameraData.matrixWorldInverse)
 
-  const visibleIndexes:number[] = []
-  const hiddenIndexes:number[] = []
+  const visibleIndexes: number[] = []
+  const hiddenIndexes: number[] = []
   positionsToVector3Like(positions, (point, pointIndex) => {
     if (polygonContains(screenLassoPoints, toScreenPosition(point, camera))) {
       // block.addWillColoringPoint(pointIndex)

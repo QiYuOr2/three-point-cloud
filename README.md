@@ -10,6 +10,3 @@ https://molar.yuque.com/oim2it/tydouy/yghb2x?singleDoc=#J2gL1
     - 判断套索多边形和区块边界是否有交汇
     - 如果套索包含了整个区块，整个区块整体处理
     - 如果存在多个需要精确到点的，全放到 web worker 同时进行
-
-
-

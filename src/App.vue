@@ -13,7 +13,6 @@ import { useThree } from './composables/useThree'
 const container = ref<HTMLElement>(null!)
 const { scene, camera, renderer, removeSceneChildren } = useThree({ container, showAxes: true })
 
-
 const controls = new ArcballControls(camera, renderer.domElement)
 controls.enabled = false
 
@@ -74,7 +73,7 @@ usePointer({
     }
 
     if (!isPressed) {
-      computePointsInLasso(blocks.value)
+      computePointsInLasso()
 
       // 清空套索提示线
       updateLasso({ clear: true })
