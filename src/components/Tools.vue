@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import type { Bounds } from '../common/polygon'
 import type { PCDFileData } from '../composables/usePCD'
 import { useFileDialog, useWebWorker } from '@vueuse/core'
-import { onUnmounted, ref, toRaw, watchEffect } from 'vue'
+import { ref, toRaw, watchEffect } from 'vue'
 import { SHOULD_SPLIT_FILE_SIZE } from '../common/constants'
 import { useSafeWindowEventListener } from '../composables/useSafeEventListener'
 

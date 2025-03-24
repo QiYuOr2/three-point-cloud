@@ -13,6 +13,7 @@ import { useThree } from './composables/useThree'
 const container = ref<HTMLElement>(null!)
 const { scene, camera, renderer, removeSceneChildren } = useThree({ container, showAxes: true })
 
+
 const controls = new ArcballControls(camera, renderer.domElement)
 controls.enabled = false
 
@@ -96,6 +97,7 @@ useSafeWindowEventListener('keyup', (event: KeyboardEvent) => {
 })
 
 function upload(file: PCDFileData) {
+  blocks.value = []
   willColoringBlockIndexes.value = []
   loadPCDFile(file)
 }

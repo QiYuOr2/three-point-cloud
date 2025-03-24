@@ -72,5 +72,20 @@ export function useThree(options: UseThreeOptions) {
     cancelAnimationFrame(animationRef.value!)
   })
 
+  const viewProjectionMatrix = new THREE.Matrix4();
+  const frustum = new THREE.Frustum();
+
+  onAnimate(() => {
+    camera.updateMatrixWorld();
+    viewProjectionMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(viewProjectionMatrix);
+    scene.children.forEach(object => {
+      if (object.type === 'Points') {
+        const isVisible = frustum.intersectsObject(object);
+        object.userData['visible'] = isVisible;
+      }
+    });
+  })
+
   return { scene, camera, renderer, onAnimate, removeSceneChildren }
 }

@@ -3,8 +3,7 @@ import type { Block } from './usePCD'
 import * as THREE from 'three'
 import { ref, toRaw, watchEffect } from 'vue'
 import { COLOR } from '../common/constants'
-import { checkPolygonRelation, isContainsPolygon, polygonContains, PolygonRelation } from '../common/polygon'
-import { positionsToVector3Like, toScreenPosition } from '../common/utils'
+import { checkPolygonRelation, isContainsPolygon, PolygonRelation } from '../common/polygon'
 import { useWebWorker } from '@vueuse/core'
 
 interface UseLassoOptions {
@@ -65,6 +64,11 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
     }
 
     const block = blocks.value[blockIndex]
+
+    if (!block) {
+      return
+    }
+
     const colors = block.points.geometry.attributes.color.array
     visibleIndexes.forEach((index) => {
       colors[index * 4 + 3] = 1
@@ -86,12 +90,16 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
       return
     }
 
-    const start = window.performance.now()
-
     const blockIndexes: number[] = []
 
     blocks.forEach((block, i) => {
       block.saveState()
+
+      if (!block.points.userData['visible']) {
+        block.setVisible(false)
+        return
+      }
+
       const rect = block.toNDC(camera)
       if (checkPolygonRelation(rect, screenLassoPoints.value) === PolygonRelation.IntersectingOrContains) {
         willColoringBlockIndexes.value.push(i)
@@ -130,7 +138,6 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
       })
     })
 
-    console.warn(`[computePointsInLasso] ${window.performance.now() - start} ms`)
   }
 
   function addColor() {
