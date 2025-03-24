@@ -13,6 +13,12 @@ interface UseLassoOptions {
   blocks: Ref<Block[]>
 }
 
+interface OnMessageReturn { 
+  blockIndex: number; 
+  visibleIndexes: number[]; 
+  hiddenIndexes: number[] 
+}
+
 export function useLasso({ blocks, camera }: UseLassoOptions) {
   const willColoringBlockIndexes = ref<number[]>([])
 
@@ -39,7 +45,7 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
     options.pointNDC && screenLassoPoints.value.push(options.pointNDC)
     options.point && lassoPoints.value.push(options.point)
 
-    if (lassoPoints.value.length < 2) {
+    if (lassoPoints.value.length < 3) {
       return
     }
 
@@ -52,34 +58,43 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
     lassoLine.geometry = geometry
   }
 
-  const { data, post } = useWebWorker<{ blockIndex: number; visibleIndexes: number[]; hiddenIndexes: number[] }>(() => new Worker(
+  const { data, post } = useWebWorker<OnMessageReturn>(() => new Worker(
     new URL('../workers/lassoSelection.worker.ts', import.meta.url),
     { type: 'module' },
   ))
 
+  let checkPointBlockCount = 0
+  let onWorkerMessageCount = 0
+  let willRenderIndex: OnMessageReturn[] = []
+  let willHideBlockIndexes: number[] = []
   watchEffect(() => {
-    const { blockIndex, visibleIndexes, hiddenIndexes } = data.value ?? {}
-    if (blockIndex === undefined) {
+    if (data.value?.blockIndex === undefined || checkPointBlockCount === 0) {
       return
     }
 
-    const block = blocks.value[blockIndex]
+    willRenderIndex.push(data.value)
 
-    if (!block) {
-      return
-    }
+    onWorkerMessageCount += 1
+    
+    if (checkPointBlockCount === onWorkerMessageCount) {
+      willHideBlockIndexes.forEach(index => blocks.value[index].setVisible(false))
+      willRenderIndex.forEach(({blockIndex, visibleIndexes, hiddenIndexes}) => {
 
-    const colors = block.points.geometry.attributes.color.array
-    visibleIndexes.forEach((index) => {
-      colors[index * 4 + 3] = 1
-      block.willColoringPointIndexes.push(index)
+      const block = blocks.value[blockIndex]
+      const colors = block.points.geometry.attributes.color.array
+      visibleIndexes.forEach((index) => {
+        colors[index * 4 + 3] = 1
+        block.willColoringPointIndexes.push(index)
+      })
+
+      hiddenIndexes.forEach((index) => {
+        colors[index * 4 + 3] = 0
+      })
+
+      block.points.geometry.attributes.color.needsUpdate = true
     })
+  }
 
-    hiddenIndexes.forEach((index) => {
-      colors[index * 4 + 3] = 0
-    })
-
-    block.points.geometry.attributes.color.needsUpdate = true
   })
 
   /**
@@ -89,6 +104,11 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
     if (lassoPoints.value.length < 3 || !blocks.length) {
       return
     }
+
+    checkPointBlockCount = 0
+    onWorkerMessageCount = 0
+    willRenderIndex = []
+    willHideBlockIndexes = []
 
     const blockIndexes: number[] = []
 
@@ -109,11 +129,10 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
           block.shouldBlockColoring = true
           return
         }
-        // 部分相交需要进一步检查点
         blockIndexes.push(i)
         return
       }
-      block.setVisible(false)
+      willHideBlockIndexes.push(i)
     })
 
     blockIndexes.forEach((index) => {
@@ -136,8 +155,8 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
           matrixWorldInverse: Array.from(camera.matrixWorldInverse.elements)
         }
       })
+      checkPointBlockCount += 1
     })
-
   }
 
   function addColor() {
