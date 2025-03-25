@@ -1,9 +1,7 @@
 # Three.js 点云图
 
-https://molar.yuque.com/oim2it/tydouy/yghb2x?singleDoc=#J2gL1
-
 1. 绘制闭合的曲线
-    - 2D ↔ 3D 坐标转换 转为NDC坐标计算
+    - 2D ↔ 3D 坐标转换 转为 NDC 坐标计算
 2. 3D 的点投影到 2D 平面，判断是否在闭合的曲线内
     - 先判断在哪个区块
     - 相机外的区块跳过计算

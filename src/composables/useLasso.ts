@@ -119,7 +119,7 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
 
       const rect = block.toNDC(camera)
       const relation = checkPolygonRelation(rect, screenLassoPoints.value)
-      
+
       if (relation === PolygonRelation.IntersectingOrContains) {
         willColoringBlockIndexes.value.push(i)
         if (isContainsPolygon(screenLassoPoints.value, rect)) {
@@ -138,7 +138,8 @@ export function useLasso({ blocks, camera }: UseLassoOptions) {
           },
         })
         checkPointBlockCount += 1
-      } else {
+      }
+      else {
         willHideBlockIndexes.push(i)
       }
     })
